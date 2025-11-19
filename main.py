@@ -69,4 +69,5 @@ async def on_member_update(before, after):
 
             await channel.send(embed=embed, view=view)
 
-bot.run("TOKEN")
+import os
+bot.run(os.getenv("TOKEN"))
