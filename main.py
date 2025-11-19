@@ -1,4 +1,4 @@
-y_import discord
+import discord
 import os
 
 intents = discord.Intents.default()
@@ -17,7 +17,7 @@ BOOST_TEXT   = os.getenv("BOOST_TEXT", "<:boost:1435140623714877460> @{mention} 
 VIP_TEXT     = os.getenv("VIP_TEXT", "<:pepopartycelebrate:1435089333567619163> It's @{mention}'s birthday! @everyone")
 
 BUTTON_LABEL = os.getenv("BUTTON_LABEL", "Add Your Birthday")
-BUTTON_EMOJI = os.getenv("BUTTON_EMOJI", none)
+BUTTON_EMOJI = os.getenv("BUTTON_EMOJI", None)   # ← fixed: None with capital N, or "cake" if you want an emoji
 # ──────────────────────────────────────────────────────────────────────────────────
 
 @bot.event
@@ -28,7 +28,6 @@ async def on_ready():
 async def on_member_join(member):
     channel = bot.get_channel(WELCOME_CHANNEL_ID)
     if channel:
-        # Plain text + button (exactly like your old bot)
         msg = WELCOME_TEXT.replace("{mention}", member.mention)
         view = discord.ui.View(timeout=None)
         view.add_item(discord.ui.Button(
@@ -45,16 +44,16 @@ async def on_member_update(before, after):
     if not channel:
         return
 
-    # Boost message (no button)
+    # Boost
     if before.premium_since is None and after.premium_since is not None:
         msg = BOOST_TEXT.replace("{mention}", after.mention)
         await channel.send(msg)
 
-    # VIP role message (no button)
+    # Birthday role added
     new_roles = set(after.roles) - set(before.roles)
     for role in new_roles:
         if role.id == ROLE_TO_WATCH:
-            msg = VIP_TEXT.replace("{mention}", after.mention).replace("{role}", role.name)
+            msg = VIP_TEXT.replace("{mention}", after.mention)
             await channel.send(msg)
 
 bot.run(os.getenv("TOKEN"))
