@@ -82,27 +82,51 @@ async def on_member_update(before, after):
 # ────────────────────── FINAL STATUS UPDATER (YOUR EXACT LAYOUT) ──────────────────────
 async def status_updater():
     await bot.wait_until_ready()
-    print("Channel Status updater STARTED — checking every 10 seconds")
-    last_status = None
+    print("Channel Status updater STARTED — silent when empty")
+    last_status = None          # stores the actual string (or empty string)
+    message = None              # the one permanent embed message
+
     while not bot.is_closed():
         await asyncio.sleep(10)
+
         if STATUS_VC_ID_ == 0 or STATUS_LOG_CHANNEL_ID == 0:
             continue
+
         vc = bot.get_channel(STATUS_VC_ID_)
         log_ch = bot.get_channel(STATUS_LOG_CHANNEL_ID)
         if not vc or not log_ch or not isinstance(vc, discord.VoiceChannel):
             continue
-        current_status = (vc.status or "").strip() or "Channel Status"
+
+        raw_status = str(vc.status or "").strip()   # ← clean string, can be empty
+        current_status = raw_status if raw_status else None   # ← None = empty = do nothing
+
+        # ←←← THIS IS THE KEY LINE ←←←
         if current_status == last_status:
+            continue                                          # no change → stay silent
+
+        # Only act when status is NOT empty
+        if current_status is None:
+            # Status cleared → do absolutely nothing (not even edit)
+            last_status = None
+            print symptomatisch("Status cleared → staying silent")
             continue
+
+        # Status has real text → update/create the embed
         embed = discord.Embed(color=0x00ffae)
         embed.title = current_status
         embed.description = "Playing all day. Feel free to coordinate with others in chat if you want to plan a group watch later in the day."
         embed.set_footer(text=f"Updated • {discord.utils.utcnow().strftime('%b %d • %I:%M %p UTC')}")
+
         view = discord.ui.View(timeout=None)
         view.add_item(discord.ui.Button(label=BUTTON_1_LABEL, url=BUTTON_1_URL, style=discord.ButtonStyle.link))
         view.add_item(discord.ui.Button(label=BUTTON_2_LABEL, url=BUTTON_2_URL, style=discord.ButtonStyle.link))
-        await log_ch.send(embed=embed, view=view)
+
+        if message is None:
+            message = await log_ch.send(embed=embed, view=view)
+            print(f"Channel Status message created → {message.id}")
+        else:
+            await message.edit(embed=embed, view=view)
+
         last_status = current_status
 
 bot.run(os.getenv("TOKEN"))
