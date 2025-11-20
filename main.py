@@ -26,44 +26,47 @@ BUTTON_1_URL           = os.getenv("BUTTON_1_URL", "https://example.com")
 BUTTON_2_LABEL         = os.getenv("BUTTON_2_LABEL", "Other Movies/Shows")
 BUTTON_2_URL           = os.getenv("BUTTON_2_URL", "https://example.com")
 
-# ────────────────────── /say — PASTE LINK OR MENTION FOR CHANNELS/THREADS ──────────────────────
+# ────────────────────── FINAL WORKING /say (channels + threads) ──────────────────────
 @bot.slash_command(name="say", description="Send a message to any channel or thread")
 async def say(
     ctx,
-    destination: discord.Option(str, "Channel or thread (paste link or mention)", required=True),
+    destination: discord.Option(str, "Paste a channel/thread LINK or mention it", required=True),
     message: discord.Option(str, "Message to send", required=True)
 ):
     if not ctx.author.guild_permissions.administrator:
         return await ctx.respond("You need Administrator.", ephemeral=True)
 
-    # Extract ID from link or mention
-    if "discord.com/channels/" in destination:
-        # Full link
-        parts = destination.split("/")
-        if len(parts) >= 4:
-            channel_id = int(parts[-1])
-        else:
-            return await ctx.respond("Invalid link format.", ephemeral=True)
-    else:
-        # Mention like <#123456789>
-        if destination.startswith("<#") and destination.endswith(">"):
-            channel_id = int(destination[2:-1])
-        else:
-            return await ctx.respond("Paste a channel/thread link or mention (e.g. <#ID>)", ephemeral=True)
+    # Accept both mentions and full links
+    channel_id = None
 
-    try:
-        channel = bot.fetch_channel(channel_id)
-    except:
-        return await ctx.respond("Couldn't find that channel/thread.", ephemeral=True)
+    # Case 1: Mention like <#123456789>
+    if destination.startswith("<#") and destination.endswith(">"):
+        channel_id = int(destination[2:-1])
+
+    # Case 2: Full Discord link
+    elif "discord.com/channels/" in destination:
+        try:
+            parts = destination.strip().split("/")
+            channel_id = int(parts[-1])          # last part is always the channel/thread ID
+        except:
+            pass
+
+    if not channel_id:
+        return await ctx.respond("Please mention the channel/thread or paste its full link.", ephemeral=True)
+
+    channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
+
+    if not channel:
+        return await ctx.respond("Channel/thread not found.", ephemeral=True)
 
     if not isinstance(channel, (discord.TextChannel, discord.Thread)):
         return await ctx.respond("That's not a text channel or thread.", ephemeral=True)
 
     if not channel.permissions_for(ctx.guild.me).send_messages:
-        return await ctx.respond("I don't have permission to send messages there.", ephemeral=True)
+        return await ctx.respond("I can't send messages there (missing permissions).", ephemeral=True)
 
     await channel.send(message)
-    await ctx.respond(f"✅ Sent to {channel.mention}!", ephemeral=True)
+    await ctx.respond(f"Sent to {channel.mention}!", ephemeral=True)
 
 # ────────────────────── EVENTS ──────────────────────
 @bot.event
