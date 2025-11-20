@@ -58,6 +58,8 @@ async def say(ctx, message: discord.Option(str, "Message to send", required=True
 
 # channel_id -> message_id
 sticky_messages: dict[int, int] = {}
+# channel_id -> sticky text
+sticky_texts: dict[int, str] = {}
 
 @bot.slash_command(name="sticky", description="Create or clear a sticky note in this channel")
 async def sticky(
@@ -75,6 +77,8 @@ async def sticky(
     if action == "set":
         if not text:
             return await ctx.respond("You must provide text for the sticky note.", ephemeral=True)
+
+        sticky_texts[channel.id] = text  # remember the text
 
         existing_id = sticky_messages.get(channel.id)
         if existing_id:
@@ -103,6 +107,7 @@ async def sticky(
             pass
 
         sticky_messages.pop(channel.id, None)
+        sticky_texts.pop(channel.id, None)
         return await ctx.respond("Sticky note cleared.", ephemeral=True)
 
 # ────────────────────── EVENTS ──────────────────────
@@ -132,6 +137,32 @@ async def on_member_update(before, after):
     for role in new_roles:
         if role.id == ROLE_TO_WATCH:
             await ch.send(VIP_TEXT.replace("{mention}", after.mention))
+
+@bot.event
+async def on_message(message: discord.Message):
+    # Ignore bot messages (including this bot)
+    if message.author.bot:
+        return
+
+    channel = message.channel
+
+    # Only do sticky behavior if this channel has one configured
+    if channel.id not in sticky_texts:
+        return
+
+    # Delete old sticky if it exists
+    old_id = sticky_messages.get(channel.id)
+    if old_id:
+        try:
+            old_msg = await channel.fetch_message(old_id)
+            await old_msg.delete()
+        except discord.NotFound:
+            pass
+
+    # Re-send sticky at the bottom
+    text = sticky_texts[channel.id]
+    new_msg = await channel.send(text)
+    sticky_messages[channel.id] = new_msg.id
 
 
 # ────────────────────── STATUS UPDATE MSG ──────────────────────
