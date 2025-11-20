@@ -14,28 +14,28 @@ bot = discord.Bot(intents=intents)
 WELCOME_CHANNEL_ID = int(os.getenv("WELCOME_CHANNEL_ID"))
 ROLE_TO_WATCH = int(os.getenv("ROLE_TO_WATCH"))
 
-WELCOME_TEXT = os.getenv("WELCOME_TEXT", "<:welcome:1435084504950640690> @{mention} just joined the server!")
-BOOST_TEXT   = os.getenv("BOOST_TEXT", "<:boost:1435140623714877460> @{mention} just boosted the server!")
-VIP_TEXT     = os.getenv("VIP_TEXT", "<a:pepebirthday:1296553298895310971> It's @{mention}'s birthday!\n-# @everyone")
+WELCOME_TEXT = os.getenv("WELCOME_TEXT")
+BOOST_TEXT   = os.getenv("BOOST_TEXT")
+VIP_TEXT     = os.getenv("VIP_TEXT")
 
-STATUS_VC_ID          = int(os.getenv("STATUS_VC_ID", "0"))
-STATUS_LOG_CHANNEL_ID  = int(os.getenv("STATUS_LOG_CHANNEL_ID", "0"))
-BUTTON_1_LABEL         = os.getenv("BUTTON_1_LABEL", "Showtimes")
-BUTTON_1_URL           = os.getenv("BUTTON_1_URL", "https://example.com")
-BUTTON_3_LABEL         = os.getenv("BUTTON_3_LABEL", "More")
-BUTTON_3_URL           = os.getenv("BUTTON_3_URL", "https://example.com")
+STATUS_VC_ID = int(os.getenv("STATUS_VC_ID"))
+STATUS_LOG_CHANNEL_ID = int(os.getenv("STATUS_LOG_CHANNEL_ID"))
+BUTTON_1_LABEL = os.getenv("BUTTON_1_LABEL")
+BUTTON_1_URL   = os.getenv("BUTTON_1_URL")
+BUTTON_3_LABEL = os.getenv("BUTTON_3_LABEL")
+BUTTON_3_URL   = os.getenv("BUTTON_3_URL")
 
 # ─────── TWITCH CONFIG (DIRECT VIA TWITCH API) ───────
-TWITCH_CLIENT_ID     = os.getenv("TWITCH_CLIENT_ID", "")
-TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET", "")
+TWITCH_CLIENT_ID     = os.getenv("TWITCH_CLIENT_ID")
+TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
 
 # Comma-separated list of Twitch channel names, defaulting to your two:
-TWITCH_CHANNELS = [c.strip().lower() for c in os.getenv("TWITCH_CHANNELS", "treyevreux,vokulnero").split(",") if c.strip()]
+TWITCH_CHANNELS = [c.strip().lower() for c in os.getenv("TWITCH_CHANNELS").split(",") if c.strip()]
 
 # Channel where announcements are sent
-TWITCH_ANNOUNCE_CHANNEL_ID = int(os.getenv("TWITCH_ANNOUNCE_CHANNEL_ID", "0"))
+TWITCH_ANNOUNCE_CHANNEL_ID = int(os.getenv("TWITCH_ANNOUNCE_CHANNEL_ID"))
 
-TWITCH_EMOJI = os.getenv("TWITCH_EMOJI", "<:twitch:1435152655990259773>")
+TWITCH_EMOJI = os.getenv("TWITCH_EMOJI")
 
 # Runtime state
 twitch_access_token: str | None = None
