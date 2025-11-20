@@ -37,7 +37,7 @@ TWITCH_CHANNELS = [c.strip().lower() for c in os.getenv("TWITCH_CHANNELS", "trey
 # Channel where announcements are sent
 TWITCH_ANNOUNCE_CHANNEL_ID = int(os.getenv("TWITCH_ANNOUNCE_CHANNEL_ID", "0"))
 
-TWITCH_EMOJI = "<:twitch:1435152655990259773>"
+TWITCH_EMOJI = os.getenv("TWITCH_EMOJI", "<:twitch:1435152655990259773>")
 
 # Runtime state
 twitch_access_token: str | None = None
