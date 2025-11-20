@@ -60,7 +60,7 @@ async def on_member_update(before, after):
         if role.id == ROLE_TO_WATCH:
             await ch.send(VIP_TEXT.replace("{mention}", after.mention))
 
-# ────────────────────── FINAL WORKING STATUS UPDATER (uses .status, not .topic) ──────────────────────
+# ────────────────────── FINAL PERFECT STATUS UPDATER (exact layout you asked for) ──────────────────────
 async def status_updater():
     await bot.wait_until_ready()
     print("Channel Status updater STARTED — checking every 10 seconds")
@@ -77,14 +77,19 @@ async def status_updater():
         if not vc or not log_ch or not isinstance(vc, discord.VoiceChannel):
             continue
 
-        current_status = (vc.status or "").strip() or "*No status set*"
+        current_status = (vc.status or "").strip()
+        if not current_status:
+            current_status = "*No status set*"
 
         if current_status == last_status:
             continue
 
-        print(f"STATUS CHANGED → '{current_status}' — posting/updating embed")
+        print(f"STATUS CHANGED → '{current_status}' — updating embed")
 
-        embed = discord.Embed(title="Channel Status", description=current_status, color=0x00ffae)
+        # ←←← EXACTLY YOUR REQUESTED LAYOUT ←←←
+        embed = discord.Embed(color=0x00ffae)
+        embed.title = current_status if current_status != "*No status set*" else "Channel Status"
+        embed.description = current_status if current_status != "*No status set*" else "*No status set*"
         embed.set_footer(text=f"Updated • {discord.utils.utcnow().strftime('%b %d • %I:%M %p UTC')}")
 
         view = discord.ui.View(timeout=None)
