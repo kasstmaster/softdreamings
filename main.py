@@ -22,8 +22,6 @@ STATUS_VC_ID          = int(os.getenv("STATUS_VC_ID", "0"))
 STATUS_LOG_CHANNEL_ID  = int(os.getenv("STATUS_LOG_CHANNEL_ID", "0"))
 BUTTON_1_LABEL         = os.getenv("BUTTON_1_LABEL", "Showtimes")
 BUTTON_1_URL           = os.getenv("BUTTON_1_URL", "https://example.com")
-BUTTON_2_LABEL         = os.getenv("BUTTON_2_LABEL", "Other Movies/Shows")
-BUTTON_2_URL           = os.getenv("BUTTON_2_URL", "https://example.com")
 BUTTON_3_LABEL         = os.getenv("BUTTON_3_LABEL", "More")
 BUTTON_3_URL           = os.getenv("BUTTON_3_URL", "https://example.com")
 
@@ -131,7 +129,6 @@ async def status_updater():
 
         view = discord.ui.View(timeout=None)
         view.add_item(discord.ui.Button(label=BUTTON_1_LABEL, url=BUTTON_1_URL, style=discord.ButtonStyle.link))
-        view.add_item(discord.ui.Button(label=BUTTON_2_LABEL, url=BUTTON_2_URL, style=discord.ButtonStyle.link))
         view.add_item(discord.ui.Button(label=BUTTON_3_LABEL, url=BUTTON_3_URL, style=discord.ButtonStyle.link, emoji="🎟️"))
 
         await log_ch.send(embed=embed, view=view)
