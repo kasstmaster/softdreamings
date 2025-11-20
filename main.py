@@ -102,7 +102,7 @@ async def status_updater():
             continue
 
         # ←←← NEW STATUS → send fresh message ←←←
-        embed = discord.Embed(color=0x00ffae)
+        embed = discord.Embed(color=0x2e2f33)
         embed.title = raw_status
         embed.description = "Playing all day. Feel free to coordinate with others in chat if you want to plan a group watch later in the day."
         embed.set_footer(text=f"Updated • {discord.utils.utcnow().strftime('%b %d • %I:%M %p UTC')}")
