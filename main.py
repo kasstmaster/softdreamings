@@ -1,7 +1,7 @@
 import discord
 import os
 import asyncio
-import aiohttp  # NEW
+import aiohttp
 
 intents = discord.Intents.default()
 intents.members = True
