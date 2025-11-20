@@ -26,25 +26,44 @@ BUTTON_1_URL           = os.getenv("BUTTON_1_URL", "https://example.com")
 BUTTON_2_LABEL         = os.getenv("BUTTON_2_LABEL", "Other Movies/Shows")
 BUTTON_2_URL           = os.getenv("BUTTON_2_URL", "https://example.com")
 
-# ────────────────────── FIXED /say — WORKS WITH CHANNELS + THREADS ──────────────────────
+# ────────────────────── /say — PASTE LINK OR MENTION FOR CHANNELS/THREADS ──────────────────────
 @bot.slash_command(name="say", description="Send a message to any channel or thread")
 async def say(
     ctx,
-    destination: discord.Option(discord.abc.GuildChannel, "Channel or thread to send to", required=True),
+    destination: discord.Option(str, "Channel or thread (paste link or mention)", required=True),
     message: discord.Option(str, "Message to send", required=True)
 ):
     if not ctx.author.guild_permissions.administrator:
         return await ctx.respond("You need Administrator.", ephemeral=True)
 
-    # Check if it's a sendable channel/thread
-    if not isinstance(destination, (discord.TextChannel, discord.Thread)):
+    # Extract ID from link or mention
+    if "discord.com/channels/" in destination:
+        # Full link
+        parts = destination.split("/")
+        if len(parts) >= 4:
+            channel_id = int(parts[-1])
+        else:
+            return await ctx.respond("Invalid link format.", ephemeral=True)
+    else:
+        # Mention like <#123456789>
+        if destination.startswith("<#") and destination.endswith(">"):
+            channel_id = int(destination[2:-1])
+        else:
+            return await ctx.respond("Paste a channel/thread link or mention (e.g. <#ID>)", ephemeral=True)
+
+    try:
+        channel = bot.fetch_channel(channel_id)
+    except:
+        return await ctx.respond("Couldn't find that channel/thread.", ephemeral=True)
+
+    if not isinstance(channel, (discord.TextChannel, discord.Thread)):
         return await ctx.respond("That's not a text channel or thread.", ephemeral=True)
 
-    if not destination.permissions_for(ctx.guild.me).send_messages:
+    if not channel.permissions_for(ctx.guild.me).send_messages:
         return await ctx.respond("I don't have permission to send messages there.", ephemeral=True)
 
-    await destination.send(message)
-    await ctx.respond(f"✅ Sent to {destination.mention}!", ephemeral=True)
+    await channel.send(message)
+    await ctx.respond(f"✅ Sent to {channel.mention}!", ephemeral=True)
 
 # ────────────────────── EVENTS ──────────────────────
 @bot.event
