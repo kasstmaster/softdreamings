@@ -26,81 +26,82 @@ BUTTON_1_URL           = os.getenv("BUTTON_1_URL", "https://example.com")
 BUTTON_2_LABEL         = os.getenv("BUTTON_2_LABEL", "Other Movies/Shows")
 BUTTON_2_URL           = os.getenv("BUTTON_2_URL", "https://example.com")
 
-# ────────────────────── COMMANDS & EVENTS ──────────────────────
+# ────────────────────── WORKING /say FOR CHANNELS + THREADS ──────────────────────
 @bot.slash_command(name="say", description="Send a message to any channel or thread")
 async def say(
     ctx,
-    destination: discord.Option(
-        str,
-        "Channel or thread to send to",
-        required=True,
-        autocomplete=discord.utils.basic_autocomplete([
-            discord.OptionChoice("Choose a channel/thread...", "0")
-        ])
-    ),  # We'll handle it manually below
-    message: discord.Option(str, "Message to send", required=True),
-    reply_to: discord.Option(str, "Message link to reply to (optional)", required=False, default="")
+    destination: discord.Option(str, "Channel or thread (paste link or mention)", required=True),
+    message: discord.Option(str, "Message to send", required=True)
 ):
     if not ctx.author.guild_permissions.administrator:
-        return await ctx.respond("No permission.", ephemeral=True)
+        return await ctx.respond("You need Administrator to use this.", ephemeral=True)
 
-    # Find the destination (channel or thread)
-    dest = None
-    try:
-        channel_id = int(destination.split("/")[-1])  # works for links
-        dest = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
-    except:
-        pass
+    # Extract ID from mention or link
+    match = discord.utils.find(lambda m: m.isdigit(), destination.split())
+    if not match:
+        return await ctx.respond("Couldn't find a channel/thread ID. Mention it or paste a link.", ephemeral=True)
 
-    if not dest:
-        return await ctx.respond("Could not find that channel/thread.", ephemeral=True)
+    channel_id = int(match)
+    channel = bot.get_channel(channel_id) or await bot.fetch_channel(channel_id)
 
-    if not isinstance(dest, (discord.TextChannel, discord.Thread)):
-        return await ctx.respond("That’s not a text channel or thread.", ephemeral=True)
+    if not channel or not isinstance(channel, (discord.TextChannel, discord.Thread, discord.ForumChannel)):
+        return await ctx.respond("That's not a valid text channel or thread.", ephemeral=True)
 
-    # Optional: reply to a message
-    reply_msg = None
-    if reply_to:
-        try:
-            msg_id = int(reply_to.split("/")[-1])
-            reply_msg = await dest.fetch_message(msg_id)
-        except:
-            pass
+    if not channel.permissions_for(ctx.guild.me).send_messages:
+        return await ctx.respond("I don't have permission to send messages there.", ephemeral=True)
 
-    await dest.send(message, reference=reply_msg)
-    await ctx.respond(f"Sent to {dest.mention}!", ephemeral=True)
+    await channel.send(message)
+    await ctx.respond(f"Sent to {channel.mention}!", ephemeral=True)
+
+# ────────────────────── REST OF YOUR CODE (unchanged) ──────────────────────
+@bot.event
+async def on_ready():
+    print(f"{bot.user} is online and ready!")
+    bot.loop.create_task(status_updater())
+
+@bot.event
+async def on_member_join(member):
+    ch = bot.get_channel(WELCOME_CHANNEL_ID)
+    if ch:
+        msg = WELCOME_TEXT.replace("{mention}", member.mention)
+        view = discord.ui.View(timeout=None)
+        view.add_item(discord.ui.Button(label=BUTTON_LABEL, style=discord.ButtonStyle.secondary, url=BIRTHDAY_FORM_LINK))
+        await ch.send(msg, view=view)
+
+@bot.event
+async def on_member_update(before, after):
+    ch = bot.get_channel(WELCOME_CHANNEL_ID)
+    if not ch: return
+    if before.premium_since is None and after.premium_since is not None:
+        await ch.send(BOOST_TEXT.replace("{mention}", after.mention))
+    new_roles = set(after.roles) - set(before.roles)
+    for role in new_roles:
+        if role.id == ROLE_TO_WATCH:
+            await ch.send(VIP_TEXT.replace("{mention}", after.mention))
 
 # ────────────────────── FINAL STATUS UPDATER (YOUR EXACT LAYOUT) ──────────────────────
 async def status_updater():
     await bot.wait_until_ready()
     print("Channel Status updater STARTED — checking every 10 seconds")
     last_status = None
-
     while not bot.is_closed():
         await asyncio.sleep(10)
-
         if STATUS_VC_ID_ == 0 or STATUS_LOG_CHANNEL_ID == 0:
             continue
-
         vc = bot.get_channel(STATUS_VC_ID_)
         log_ch = bot.get_channel(STATUS_LOG_CHANNEL_ID)
         if not vc or not log_ch or not isinstance(vc, discord.VoiceChannel):
             continue
-
         current_status = (vc.status or "").strip() or "Channel Status"
-
         if current_status == last_status:
             continue
-
         embed = discord.Embed(color=0x00ffae)
         embed.title = current_status
         embed.description = "Playing all day. Feel free to coordinate with others in chat if you want to plan a group watch later in the day."
         embed.set_footer(text=f"Updated • {discord.utils.utcnow().strftime('%b %d • %I:%M %p UTC')}")
-
         view = discord.ui.View(timeout=None)
         view.add_item(discord.ui.Button(label=BUTTON_1_LABEL, url=BUTTON_1_URL, style=discord.ButtonStyle.link))
         view.add_item(discord.ui.Button(label=BUTTON_2_LABEL, url=BUTTON_2_URL, style=discord.ButtonStyle.link))
-
         await log_ch.send(embed=embed, view=view)
         last_status = current_status
 
