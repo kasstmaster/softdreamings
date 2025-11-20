@@ -26,7 +26,7 @@ BUTTON_1_URL           = os.getenv("BUTTON_1_URL", "https://example.com")
 BUTTON_2_LABEL         = os.getenv("BUTTON_2_LABEL", "Other Movies/Shows")
 BUTTON_2_URL           = os.getenv("BUTTON_2_URL", "https://example.com")
 
-# ────────────────────── FINAL /say — ONLY ONE FIELD, SENDS WHERE USED ──────────────────────
+# ────────────────────── /say COMMAND ──────────────────────
 @bot.slash_command(name="say", description="Make the bot say something right here")
 async def say(ctx, message: discord.Option(str, "Message to send", required=True)):
     if not ctx.author.guild_permissions.administrator:
@@ -61,7 +61,7 @@ async def on_member_update(before, after):
         if role.id == ROLE_TO_WATCH:
             await ch.send(VIP_TEXT.replace("{mention}", after.mention))
 
-# ────────────────────── FINAL STATUS UPDATER (no spam, silent when empty) ──────────────────────
+# ────────────────────── STATUS UPDATE MSG ──────────────────────
 async def status_updater():
     await bot.wait_until_ready()
     print("Channel Status updater STARTED — no spam on restart, silent when empty")
@@ -98,7 +98,7 @@ async def status_updater():
             continue
 
         # NEW STATUS → send fresh message
-        embed = discord.Embed(color=0x00ffae)
+        embed = discord.Embed(color=0x2d2e34)
         embed.title = raw_status
         embed.description = "Playing all day. Feel free to coordinate with others in chat if you want to plan a group watch later in the day."
         embed.set_footer(text=f"Updated • {discord.utils.utcnow().strftime('%b %d • %I:%M %p UTC')}")
@@ -106,6 +106,7 @@ async def status_updater():
         view = discord.ui.View(timeout=None)
         view.add_item(discord.ui.Button(label=BUTTON_1_LABEL, url=BUTTON_1_URL, style=discord.ButtonStyle.link))
         view.add_item(discord.ui.Button(label=BUTTON_2_LABEL, url=BUTTON_2_URL, style=discord.ButtonStyle.link))
+        view.add_item(discord.ui.Button(label=BUTTON_3_LABEL, url=BUTTON_3_URL, style=discord.ButtonStyle.link, emoji="🎟️"))
 
         await log_ch.send(embed=embed, view=view)
         print(f"New status → '{raw_status}' → message sent")
