@@ -25,6 +25,8 @@ BUTTON_1_LABEL         = os.getenv("BUTTON_1_LABEL", "Showtimes")
 BUTTON_1_URL           = os.getenv("BUTTON_1_URL", "https://example.com")
 BUTTON_2_LABEL         = os.getenv("BUTTON_2_LABEL", "Other Movies/Shows")
 BUTTON_2_URL           = os.getenv("BUTTON_2_URL", "https://example.com")
+BUTTON_3_LABEL = os.getenv("BUTTON_3_LABEL", "More")
+BUTTON_3_URL   = os.getenv("BUTTON_3_URL", "https://example.com")
 
 # ────────────────────── /say COMMAND ──────────────────────
 @bot.slash_command(name="say", description="Make the bot say something right here")
