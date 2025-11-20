@@ -110,6 +110,7 @@ async def status_updater():
         view = discord.ui.View(timeout=None)
         view.add_item(discord.ui.Button(label=BUTTON_1_LABEL, url=BUTTON_1_URL, style=discord.ButtonStyle.link))
         view.add_item(discord.ui.Button(label=BUTTON_2_LABEL, url=BUTTON_2_URL, style=discord.ButtonStyle.link))
+        view.add_item(discord.ui.Button(label=BUTTON_3_LABEL, url=BUTTON_3_URL, style=discord.ButtonStyle.link))
 
         await log_ch.send(embed=embed, view=view)
         print(f"New status → '{raw_status}' → fresh message sent")
