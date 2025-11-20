@@ -19,7 +19,6 @@ BOOST_TEXT   = os.getenv("BOOST_TEXT", "<:boost:1435140623714877460> @{mention} 
 VIP_TEXT     = os.getenv("VIP_TEXT", "<a:pepebirthday:1296553298895310971> It's @{mention}'s birthday! @everyone")
 BUTTON_LABEL = os.getenv("BUTTON_LABEL", "Add Your Birthday")
 
-# ←←← YOUR EXACT VARIABLE NAMES ←←←
 STATUS_VC_ID_          = int(os.getenv("STATUS_VC_ID_", "0"))
 STATUS_LOG_CHANNEL_ID  = int(os.getenv("STATUS_LOG_CHANNEL_ID", "0"))
 BUTTON_1_LABEL         = os.getenv("BUTTON_1_LABEL", "Showtimes")
@@ -60,7 +59,7 @@ async def on_member_update(before, after):
         if role.id == ROLE_TO_WATCH:
             await ch.send(VIP_TEXT.replace("{mention}", after.mention))
 
-# ────────────────────── FINAL PERFECT STATUS UPDATER (exact layout you asked for) ──────────────────────
+# ────────────────────── FINAL STATUS UPDATER (YOUR EXACT LAYOUT) ──────────────────────
 async def status_updater():
     await bot.wait_until_ready()
     print("Channel Status updater STARTED — checking every 10 seconds")
@@ -77,19 +76,14 @@ async def status_updater():
         if not vc or not log_ch or not isinstance(vc, discord.VoiceChannel):
             continue
 
-        current_status = (vc.status or "").strip()
-        if not current_status:
-            current_status = "*No status set*"
+        current_status = (vc.status or "").strip() or "Channel Status"
 
         if current_status == last_status:
             continue
 
-        print(f"STATUS CHANGED → '{current_status}' — updating embed")
-
-        # ←←← EXACTLY YOUR REQUESTED LAYOUT ←←←
         embed = discord.Embed(color=0x00ffae)
-        embed.title = current_status if current_status != "*No status set*" else "Channel Status"
-        embed.description = current_status if current_status != "*No status set*" else "*No status set*"
+        embed.title = current_status
+        embed.description = "Playing all day. Feel free to coordinate with others in chat if you want to plan a group watch later in the day."
         embed.set_footer(text=f"Updated • {discord.utils.utcnow().strftime('%b %d • %I:%M %p UTC')}")
 
         view = discord.ui.View(timeout=None)
