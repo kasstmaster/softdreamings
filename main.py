@@ -257,7 +257,7 @@ async def birthday_checker():
                         except discord.Forbidden:
                             pass
 
-        await asyncio.sleep(3600)  # check once per hour
+        await asyncio.sleep(3600)
 
 # ────────────────────── START BOT ──────────────────────
 bot.run(os.getenv("TOKEN"))
