@@ -26,26 +26,25 @@ BUTTON_1_URL           = os.getenv("BUTTON_1_URL", "https://example.com")
 BUTTON_2_LABEL         = os.getenv("BUTTON_2_LABEL", "Other Movies/Shows")
 BUTTON_2_URL           = os.getenv("BUTTON_2_URL", "https://example.com")
 
-# ────────────────────── /say COMMAND — NOW WITH WORKING AUTOCOMPLETE ──────────────────────
+# ────────────────────── FIXED /say — WORKS WITH CHANNELS + THREADS ──────────────────────
 @bot.slash_command(name="say", description="Send a message to any channel or thread")
 async def say(
     ctx,
-    destination: discord.Option(
-        discord.TextChannel,  # this gives real autocomplete for text channels + threads
-        "Channel or thread to send to",
-        required=True
-    ),
+    destination: discord.Option(discord.abc.GuildChannel, "Channel or thread to send to", required=True),
     message: discord.Option(str, "Message to send", required=True)
 ):
     if not ctx.author.guild_permissions.administrator:
         return await ctx.respond("You need Administrator.", ephemeral=True)
 
-    # destination is now a real channel/thread object thanks to the option type above
+    # Check if it's a sendable channel/thread
+    if not isinstance(destination, (discord.TextChannel, discord.Thread)):
+        return await ctx.respond("That's not a text channel or thread.", ephemeral=True)
+
     if not destination.permissions_for(ctx.guild.me).send_messages:
         return await ctx.respond("I don't have permission to send messages there.", ephemeral=True)
 
     await destination.send(message)
-    await ctx.respond(f"Sent to {destination.mention}!", ephemeral=True)
+    await ctx.respond(f"✅ Sent to {destination.mention}!", ephemeral=True)
 
 # ────────────────────── EVENTS ──────────────────────
 @bot.event
