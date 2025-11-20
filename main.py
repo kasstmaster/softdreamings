@@ -20,7 +20,7 @@ VIP_TEXT     = os.getenv("VIP_TEXT", "<a:pepebirthday:1296553298895310971> It's 
 BUTTON_LABEL = os.getenv("BUTTON_LABEL", "Add Your Birthday")
 
 # CHANNEL STATUS CONFIG — THESE MUST BE SET IN RAILWAY VARIABLES
-STATUS_VC_ID          = int(os.getenv("STATUS_VC_ID", "0"))           # ← voice channel ID
+STATUS_VC_ID_          = int(os.getenv("STATUS_VC_ID_", "0"))           # ← voice channel ID
 STATUS_LOG_CHANNEL_ID = int(os.getenv("STATUS_LOG_CHANNEL_ID", "0"))  # ← text channel for embed
 STATUS_MESSAGE_ID     = int(os.getenv("STATUS_MESSAGE_ID", "0"))     # ← leave 0, bot fills it
 
@@ -39,55 +39,42 @@ async def say(ctx, channel: discord.Option(discord.TextChannel), message: str):
 
 # ────────────────────── BASIC EVENTS ──────────────────────
 @bot.event
-async def on_ready():
-    print(f"{bot.user} is online and ready!")
-    bot.loop.create_task(status_updater_task())
-
-@bot.event
-async def on_member_join(member):
-    ch = bot.get_channel(WELCOME_CHANNEL_ID)
-    if ch:
-        msg = WELCOME_TEXT.replace("{mention}", member.mention)
-        view = discord.ui.View(timeout=None)
-        view.add_item(discord.ui.Button(label=BUTTON_LABEL, style=discord.ButtonStyle.secondary, url=BIRTHDAY_FORM_LINK))
-        await ch.send(msg, view=view)
-
-@bot.event
-async def on_member_update(before, after):
-    ch = bot.get_channel(WELCOME_CHANNEL_ID)
-    if not ch: return
-
-    if before.premium_since is None and after.premium_since is not None:
-        await ch.send(BOOST_TEXT.replace("{mention}", after.mention))
-
-    new_roles = set(after.roles) - set(before.roles)
-    for role in new_roles:
-        if role.id == ROLE_TO_WATCH:
-            await ch.send(VIP_TEXT.replace("{mention}", after.mention))
-
-# ────────────────────── BULLETPROOF CHANNEL STATUS UPDATER ──────────────────────
-async def status_updater_task():
+async def status_updater():
     await bot.wait_until_ready()
+    print("Status updater loop started!")          # ← YOU WILL SEE THIS IN LOGS
+
     last_topic = None
 
     while not bot.is_closed():
-        await asyncio.sleep(10)  # checks every 10 seconds
+        await asyncio.sleep(8)
 
-        if not STATUS_VC_ID or not STATUS_LOG_CHANNEL_ID:
+        # DEBUG LINES — these will show up in Railway logs
+        print(f"Checking VC ID: {STATUS_VC_ID_}")
+        print(f"Log channel ID: {STATUS_LOG_CHANNEL_ID}")
+
+        if STATUS_VC_ID_ == 0 or STATUS_LOG_CHANNEL_ID == 0:
+            print("One of the IDs is 0 → skipping")
             continue
 
-        vc = bot.get_channel(STATUS_VC_ID)
-        if not vc or not isinstance(vc, discord.VoiceChannel):
+        vc = bot.get_channel(STATUS_VC_ID_)
+        log_ch = bot.get_channel(STATUS_LOG_CHANNEL_ID)
+
+        print(f"VC object: {vc}")                     # ← should show the voice channel name
+        print(f"Log channel object: {log_ch}")        # ← should show the text channel name
+
+        if not vc or not log_ch:
+            print("Could not fetch one of the channels → skipping")
             continue
 
-        current_topic = (vc.topic or "").strip()
-        if current_topic == "":
-            current_topic = "*No status set*"
+        current_topic = (vc.topic or "").strip() or "*No status set*"
+        print(f"Current topic: '{current_topic}' | Last topic: '{last_topic}'")
 
         if current_topic == last_topic:
-            continue  # no change
+            print("No change → sleeping")
+            continue
 
-        # Something changed → update embed
+        # If we get here → topic changed → create/update embed
+        print("TOPIC CHANGED → UPDATING EMBED NOW!")
         embed = discord.Embed(title="Channel Status", description=current_topic, color=0x00ffae)
         embed.set_footer(text=f"Updated • {discord.utils.utcnow().strftime('%b %d • %I:%M %p UTC')}")
 
@@ -95,24 +82,11 @@ async def status_updater_task():
         view.add_item(discord.ui.Button(label=BUTTON_1_LABEL, url=BUTTON_1_URL, style=discord.ButtonStyle.link))
         view.add_item(discord.ui.Button(label=BUTTON_2_LABEL, url=BUTTON_2_URL, style=discord.ButtonStyle.link))
 
-        text_ch = bot.get_channel(STATUS_LOG_CHANNEL_ID)
-        if not text_ch:
-            continue
-
         try:
-            if STATUS_MESSAGE_ID == 0:
-                msg = await text_ch.send(embed=embed, view=view)
-                new_id = msg.id
-                print(f"Channel Status message created → ID: {new_id}")
-                # Optional: you can manually copy this ID into Railway as STATUS_MESSAGE_ID if you want it to survive restarts
-            else:
-                msg = await text_ch.fetch_message(STATUS_MESSAGE_ID)
-                await msg.edit(embed=embed, view=view)
-        except discord.NotFound:
-            msg = await text_ch.send(embed=embed, view=view)
-            print(f"Old message gone → new one created: {msg.id}")
+            msg = await log_ch.send(embed=embed, view=view)
+            print(f"SUCCESS → New message sent! ID: {msg.id}")
         except Exception as e:
-            print(f"Status update error: {e}")
+            print(f"FAILED TO SEND → {e}")
 
         last_topic = current_topic
 
