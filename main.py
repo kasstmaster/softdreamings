@@ -2,6 +2,7 @@ import discord
 import os
 import asyncio
 import aiohttp
+from datetime import datetime  # new
 
 intents = discord.Intents.default()
 intents.members = True
@@ -62,7 +63,6 @@ if _raw_pairs:
             if role_id.isdigit():
                 reaction_roles[emoji] = int(role_id)
 
-
 # ────────────────────── MOD LOG THREAD ──────────────────────
 
 MOD_LOG_THREAD_ID = int(os.getenv("MOD_LOG_THREAD_ID"))
@@ -79,7 +79,30 @@ async def log_to_thread(content: str):
     except Exception as e:
         print(f"Failed to send log message: {e}")
 
+# ────────────────────── DEAD CHAT CONFIG ──────────────────────
+
+DEAD_CHAT_ROLE_ID = int(os.getenv("DEAD_CHAT_ROLE_ID", "0"))
+
+# Comma-separated list of channel IDs to watch for dead chat
+DEAD_CHAT_CHANNEL_IDS = [
+    int(x.strip()) for x in os.getenv("DEAD_CHAT_CHANNEL_IDS", "").split(",")
+    if x.strip().isdigit()
+]
+
+# Time with no messages before someone can steal the role (seconds)
+DEAD_CHAT_IDLE_SECONDS = int(os.getenv("DEAD_CHAT_IDLE_SECONDS", "600"))  # default 10 min
+
+# Cooldown between wins for the same user (seconds)
+DEAD_CHAT_COOLDOWN_SECONDS = int(os.getenv("DEAD_CHAT_COOLDOWN_SECONDS", "0"))  # e.g. 1800 for 30 min
+
+# State
+dead_last_message_time: dict[int, datetime] = {}          # per channel id
+dead_current_holder_id: int | None = None
+dead_last_notice_message_ids: dict[int, int | None] = {}  # per channel id
+dead_last_win_time: dict[int, datetime] = {}              # per user id
+
 # ────────────────────── /say COMMAND ──────────────────────
+
 @bot.slash_command(name="say", description="Make the bot say something right here")
 async def say(ctx, message: discord.Option(str, "Message to send", required=True)):
     if not ctx.author.guild_permissions.administrator:
@@ -140,14 +163,149 @@ async def sticky(
         sticky_texts.pop(channel.id, None)
         return await ctx.respond("Sticky note cleared.", ephemeral=True)
 
+# ────────────────────── DEAD CHAT HELPERS ──────────────────────
+
+async def initialize_dead_chat():
+    global dead_current_holder_id
+
+    if not DEAD_CHAT_CHANNEL_IDS or DEAD_CHAT_ROLE_ID == 0:
+        print("DeadChat: not configured; skipping init.")
+        return
+
+    # Determine current holder from role membership
+    for guild in bot.guilds:
+        role = guild.get_role(DEAD_CHAT_ROLE_ID)
+        if role:
+            if role.members:
+                holder = role.members[0]
+                dead_current_holder_id = holder.id
+                print(f"DeadChat: startup holder is {holder} ({holder.id})")
+            break
+
+    # Initialize last activity per channel
+    for chan_id in DEAD_CHAT_CHANNEL_IDS:
+        ch = bot.get_channel(chan_id)
+        if not isinstance(ch, discord.TextChannel):
+            print(f"DeadChat: channel {chan_id} not found or not text.")
+            continue
+
+        try:
+            async for msg in ch.history(limit=50):
+                if not msg.author.bot:
+                    dead_last_message_time[chan_id] = msg.created_at
+                    break
+        except discord.Forbidden:
+            print(f"DeadChat: no permission to read history in {chan_id}")
+            continue
+
+        # If no non-bot message found, use now
+        dead_last_message_time.setdefault(chan_id, discord.utils.utcnow())
+        dead_last_notice_message_ids.setdefault(chan_id, None)
+
+    print("DeadChat: initialization complete.")
+
+
+async def handle_dead_chat_message(message: discord.Message):
+    global dead_current_holder_id
+
+    if DEAD_CHAT_ROLE_ID == 0 or not DEAD_CHAT_CHANNEL_IDS:
+        return
+
+    channel = message.channel
+    if channel.id not in DEAD_CHAT_CHANNEL_IDS:
+        return
+
+    now = discord.utils.utcnow()
+    last_time = dead_last_message_time.get(channel.id)
+    dead_last_message_time[channel.id] = now  # always update
+
+    # First time after boot for this channel
+    if last_time is None:
+        return
+
+    idle_seconds = (now - last_time).total_seconds()
+    if idle_seconds < DEAD_CHAT_IDLE_SECONDS:
+        # Not dead long enough
+        return
+
+    guild = message.guild
+    if guild is None:
+        return
+
+    role = guild.get_role(DEAD_CHAT_ROLE_ID)
+    if role is None:
+        print("DeadChat: role not found.")
+        return
+
+    member = message.author
+
+    # Ignore if they already have the role
+    if role in member.roles:
+        return
+
+    # Cooldown between wins for same user
+    if DEAD_CHAT_COOLDOWN_SECONDS > 0:
+        last_win = dead_last_win_time.get(member.id)
+        if last_win is not None:
+            since_win = (now - last_win).total_seconds()
+            if since_win < DEAD_CHAT_COOLDOWN_SECONDS:
+                print(f"DeadChat: {member} is on cooldown, not granting role.")
+                return
+
+    # Remove role from previous holder
+    if dead_current_holder_id is not None:
+        prev = guild.get_member(dead_current_holder_id)
+        if prev and role in prev.roles:
+            try:
+                await prev.remove_roles(role, reason="Dead Chat stolen")
+            except discord.Forbidden:
+                print("DeadChat: no permission to remove role from previous holder.")
+
+    # Give role to new holder
+    try:
+        await member.add_roles(role, reason="Dead Chat claimed")
+    except discord.Forbidden:
+        print("DeadChat: no permission to add role to new holder.")
+        return
+
+    dead_current_holder_id = member.id
+    dead_last_win_time[member.id] = now
+
+    # Delete previous notices in all watched channels
+    for cid, msg_id in list(dead_last_notice_message_ids.items()):
+        if msg_id is None:
+            continue
+        ch = guild.get_channel(cid)
+        if not ch:
+            continue
+        try:
+            old_msg = await ch.fetch_message(msg_id)
+            await old_msg.delete()
+        except (discord.NotFound, discord.Forbidden, discord.HTTPException):
+            pass
+        dead_last_notice_message_ids[cid] = None
+
+    # Post new notice in current channel
+    minutes = DEAD_CHAT_IDLE_SECONDS // 60
+    notice = await channel.send(
+        f"{member.mention} has stolen the {role.mention} role "
+        f"after {minutes} minute{'s' if minutes != 1 else ''} of silence."
+    )
+    dead_last_notice_message_ids[channel.id] = notice.id
+
 # ────────────────────── EVENTS ──────────────────────
+
 @bot.event
 async def on_ready():
     print(f"{bot.user} is online and ready!")
     bot.loop.create_task(status_updater())
     bot.loop.create_task(twitch_watcher())
 
+    # Reaction roles: add reactions to the configured message
+    found = False
     for guild in bot.guilds:
+        if found:
+            break
         for channel in guild.text_channels:
             try:
                 msg = await channel.fetch_message(REACTION_ROLE_MESSAGE_ID)
@@ -161,7 +319,11 @@ async def on_ready():
                     pass
 
             print("Reaction roles: reactions added to message.")
-            return 
+            found = True
+            break
+
+    # Initialize Dead Chat after startup
+    await initialize_dead_chat()
 
 
 @bot.event
@@ -179,25 +341,29 @@ async def on_member_update(before, after):
 
 @bot.event
 async def on_message(message: discord.Message):
+    # Abuse control: ignore all bots
     if message.author.bot:
         return
 
     channel = message.channel
 
-    if channel.id not in sticky_texts:
-        return
+    # Dead Chat handler
+    await handle_dead_chat_message(message)
 
-    old_id = sticky_messages.get(channel.id)
-    if old_id:
-        try:
-            old_msg = await channel.fetch_message(old_id)
-            await old_msg.delete()
-        except discord.NotFound:
-            pass
+    # Sticky note handler
+    if channel.id in sticky_texts:
+        old_id = sticky_messages.get(channel.id)
+        if old_id:
+            try:
+                old_msg = await channel.fetch_message(old_id)
+                await old_msg.delete()
+            except discord.NotFound:
+                pass
 
-    text = sticky_texts[channel.id]
-    new_msg = await channel.send(text)
-    sticky_messages[channel.id] = new_msg.id
+        text = sticky_texts[channel.id]
+        new_msg = await channel.send(text)
+        sticky_messages[channel.id] = new_msg.id
+
 
 @bot.event
 async def on_member_join(member: discord.Member):
@@ -335,6 +501,7 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
         pass
 
 # ────────────────────── STATUS UPDATE MSG ──────────────────────
+
 async def status_updater():
     await bot.wait_until_ready()
     print("Channel Status updater STARTED — no spam on restart, silent when empty")
@@ -387,7 +554,6 @@ async def status_updater():
         print(f"New status → '{raw_status}' → fresh message sent")
 
         last_status = raw_status
-
 
 # ────────────────────── TWITCH API HELPERS ──────────────────────
 
@@ -471,7 +637,6 @@ async def fetch_twitch_streams():
             result[login] = s
     return result
 
-
 # ────────────────────── TWITCH WATCHER TASK ──────────────────────
 
 async def twitch_watcher():
@@ -527,7 +692,51 @@ async def twitch_watcher():
                 print(f"Twitch: {name} went offline")
 
         await asyncio.sleep(60) 
-        
+
+# ────────────────────── DEAD CHAT COLOR COMMAND ──────────────────────
+
+@bot.slash_command(name="deadcolor", description="Change the Dead Chat role color")
+async def deadcolor(
+    ctx: discord.ApplicationContext,
+    hex_color: discord.Option(str, "Hex color (e.g. #ff0000 or ff0000)", required=True),
+):
+    if DEAD_CHAT_ROLE_ID == 0:
+        await ctx.respond("Dead Chat role is not configured.", ephemeral=True)
+        return
+
+    guild = ctx.guild
+    if guild is None:
+        await ctx.respond("This command can only be used in a server.", ephemeral=True)
+        return
+
+    role = guild.get_role(DEAD_CHAT_ROLE_ID)
+    if role is None:
+        await ctx.respond("Dead Chat role not found.", ephemeral=True)
+        return
+
+    member = ctx.author
+    if role not in member.roles:
+        await ctx.respond("You don't have the Dead Chat role.", ephemeral=True)
+        return
+
+    value = hex_color.strip()
+    if value.startswith("#"):
+        value = value[1:]
+
+    try:
+        color_int = int(value, 16)
+    except ValueError:
+        await ctx.respond("Use a valid hex color like `#ff0000` or `ff0000`.", ephemeral=True)
+        return
+
+    try:
+        await role.edit(color=discord.Color(color_int), reason="Dead Chat color change")
+    except discord.Forbidden:
+        await ctx.respond("I don't have permission to edit that role.", ephemeral=True)
+        return
+
+    await ctx.respond(f"Updated {role.name} color.", ephemeral=True)
 
 # ────────────────────── START BOT ──────────────────────
+
 bot.run(os.getenv("TOKEN"))
