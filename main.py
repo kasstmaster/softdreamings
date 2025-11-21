@@ -695,10 +695,31 @@ async def twitch_watcher():
 
 # ────────────────────── DEAD CHAT COLOR COMMAND ──────────────────────
 
+COLOR_NAME_MAP = {
+    "red":     0xFF0000,
+    "blue":    0x0000FF,
+    "green":   0x00FF00,
+    "purple":  0x800080,
+    "pink":    0xFFC0CB,
+    "yellow":  0xFFFF00,
+    "orange":  0xFFA500,
+    "teal":    0x008080,
+    "cyan":    0x00FFFF,
+    "magenta": 0xFF00FF,
+    "black":   0x000000,
+    "white":   0xFFFFFF,
+    "gray":    0x808080,
+    "grey":    0x808080,
+    "maroon":  0x800000,
+    "navy":    0x000080,
+    "lime":    0x32CD32,
+    "gold":    0xFFD700
+}
+
 @bot.slash_command(name="deadcolor", description="Change the Dead Chat role color")
 async def deadcolor(
     ctx: discord.ApplicationContext,
-    hex_color: discord.Option(str, "Hex color (e.g. #ff0000 or ff0000)", required=True),
+    color: discord.Option(str, "Hex or name (e.g. #ff0000, ff0000, red, pink)", required=True),
 ):
     if DEAD_CHAT_ROLE_ID == 0:
         await ctx.respond("Dead Chat role is not configured.", ephemeral=True)
@@ -719,15 +740,26 @@ async def deadcolor(
         await ctx.respond("You don't have the Dead Chat role.", ephemeral=True)
         return
 
-    value = hex_color.strip()
-    if value.startswith("#"):
-        value = value[1:]
+    raw = color.strip().lower()
 
-    try:
-        color_int = int(value, 16)
-    except ValueError:
-        await ctx.respond("Use a valid hex color like `#ff0000` or `ff0000`.", ephemeral=True)
-        return
+    # 1) Try color name
+    if raw in COLOR_NAME_MAP:
+        color_int = COLOR_NAME_MAP[raw]
+    else:
+        # 2) Fallback to hex parsing
+        value = raw
+        if value.startswith("#"):
+            value = value[1:]
+        try:
+            color_int = int(value, 16)
+        except ValueError:
+            valid_names = ", ".join(sorted(COLOR_NAME_MAP.keys()))
+            await ctx.respond(
+                "Use a valid hex color like `#ff0000` / `ff0000` "
+                f"or one of these names: {valid_names}.",
+                ephemeral=True
+            )
+            return
 
     try:
         await role.edit(color=discord.Color(color_int), reason="Dead Chat color change")
