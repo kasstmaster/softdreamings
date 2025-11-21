@@ -2,6 +2,7 @@ import discord
 import os
 import asyncio
 import aiohttp
+import json
 from datetime import datetime  # new
 
 intents = discord.Intents.default()
@@ -111,6 +112,37 @@ async def say(ctx, message: discord.Option(str, "Message to send", required=True
     await ctx.channel.send(message)
     await ctx.respond("Sent!", ephemeral=True)
 
+# ────────────────────── /birthday_announce COMMAND ──────────────────────
+
+@bot.slash_command(
+    name="birthday_announce",
+    description="Manually send the birthday message for a member"
+)
+async def birthday_announce(
+    ctx: discord.ApplicationContext,
+    member: discord.Option(discord.Member, "Member whose birthday message to send", required=True),
+):
+    # Only admins can run this
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("You need Administrator to use this.", ephemeral=True)
+
+    ch = bot.get_channel(WELCOME_CHANNEL_ID)
+    if not ch:
+        return await ctx.respond("Birthday announcement channel (WELCOME_CHANNEL_ID) not found.", ephemeral=True)
+
+    # Build the message using the same template as ROLE_TO_WATCH
+    if VIP_TEXT:
+        msg = VIP_TEXT.replace("{mention}", member.mention)
+    else:
+        msg = f"Happy birthday, {member.mention}!"
+
+    try:
+        await ch.send(msg)
+    except Exception as e:
+        return await ctx.respond(f"Failed to send birthday message: `{e}`", ephemeral=True)
+
+    await ctx.respond(f"Sent birthday message for {member.mention}.", ephemeral=True)
+
 # ────────────────────── STICKY NOTES ──────────────────────
 
 sticky_messages: dict[int, int] = {}
@@ -139,29 +171,145 @@ async def sticky(
             try:
                 msg = await channel.fetch_message(existing_id)
                 await msg.edit(content=text)
-                return await ctx.respond("Sticky note updated.", ephemeral=True)
+                await ctx.respond("Sticky note updated.", ephemeral=True)
             except discord.NotFound:
-                pass 
+                # Message disappeared; create a new one
+                msg = await channel.send(text)
+                sticky_messages[channel.id] = msg.id
+                await ctx.respond("Sticky note created.", ephemeral=True)
+        else:
+            msg = await channel.send(text)
+            sticky_messages[channel.id] = msg.id
+            await ctx.respond("Sticky note created.", ephemeral=True)
 
-        msg = await channel.send(text)
-        sticky_messages[channel.id] = msg.id
-        return await ctx.respond("Sticky note created.", ephemeral=True)
+        # Save to storage
+        await save_stickies()
+        return
 
     # ────────── CLEAR STICKY ──────────
     elif action == "clear":
         existing_id = sticky_messages.get(channel.id)
-        if not existing_id:
-            return await ctx.respond("There is no sticky note in this channel.", ephemeral=True)
-
-        try:
-            msg = await channel.fetch_message(existing_id)
-            await msg.delete()
-        except discord.NotFound:
-            pass
+        if existing_id:
+            try:
+                msg = await channel.fetch_message(existing_id)
+                await msg.delete()
+            except discord.NotFound:
+                pass
 
         sticky_messages.pop(channel.id, None)
         sticky_texts.pop(channel.id, None)
+
+        # Save to storage
+        await save_stickies()
+
         return await ctx.respond("Sticky note cleared.", ephemeral=True)
+
+# Where to store sticky data as JSON
+# Set this to the SAME channel you use for birthday backups
+STICKY_STORAGE_CHANNEL_ID = int(os.getenv("STICKY_STORAGE_CHANNEL_ID", "0"))
+
+# The message in that channel that holds the JSON blob
+sticky_storage_message_id: int | None = None
+
+async def init_sticky_storage():
+    """
+    Find or create the sticky storage message in STICKY_STORAGE_CHANNEL_ID,
+    and load sticky_texts / sticky_messages from it.
+    """
+    global sticky_storage_message_id, sticky_texts, sticky_messages
+
+    if STICKY_STORAGE_CHANNEL_ID == 0:
+        print("[Sticky] STICKY_STORAGE_CHANNEL_ID is 0 → persistence disabled.")
+        return
+
+    ch = bot.get_channel(STICKY_STORAGE_CHANNEL_ID)
+    if not isinstance(ch, discord.TextChannel):
+        print(f"[Sticky] Storage channel {STICKY_STORAGE_CHANNEL_ID} not found or not a text channel.")
+        return
+
+    # Look for an existing storage message
+    storage_msg = None
+    try:
+        async for msg in ch.history(limit=50, oldest_first=True):
+            if msg.author == bot.user and msg.content.startswith("STICKY_DATA:"):
+                storage_msg = msg
+                break
+    except discord.Forbidden:
+        print(f"[Sticky] No permission to read history in {STICKY_STORAGE_CHANNEL_ID}")
+        return
+
+    if storage_msg is None:
+        # Create a new storage message
+        storage_msg = await ch.send("STICKY_DATA:{}")
+        print(f"[Sticky] Created new storage message in {ch.mention} (id={storage_msg.id})")
+    else:
+        print(f"[Sticky] Found existing storage message (id={storage_msg.id})")
+
+    sticky_storage_message_id = storage_msg.id
+
+    # Parse JSON
+    data_str = storage_msg.content[len("STICKY_DATA:"):]
+    if not data_str.strip():
+        return
+
+    try:
+        data = json.loads(data_str)
+    except json.JSONDecodeError:
+        print("[Sticky] Failed to parse storage JSON, starting fresh.")
+        return
+
+    # Expect: { channel_id_str: { "text": str, "message_id": int_or_null } }
+    for chan_id_str, info in data.items():
+        try:
+            cid = int(chan_id_str)
+        except ValueError:
+            continue
+
+        text = info.get("text")
+        msg_id = info.get("message_id")
+
+        if isinstance(text, str):
+            sticky_texts[cid] = text
+        if isinstance(msg_id, int):
+            sticky_messages[cid] = msg_id
+
+    print(f"[Sticky] Loaded {len(sticky_texts)} sticky entries from storage.")
+
+
+async def save_stickies():
+    """
+    Save sticky_texts / sticky_messages to the storage message as JSON.
+    """
+    global sticky_storage_message_id
+
+    if STICKY_STORAGE_CHANNEL_ID == 0 or sticky_storage_message_id is None:
+        return
+
+    ch = bot.get_channel(STICKY_STORAGE_CHANNEL_ID)
+    if not isinstance(ch, discord.TextChannel):
+        return
+
+    try:
+        msg = await ch.fetch_message(sticky_storage_message_id)
+    except discord.NotFound:
+        # Storage message vanished; re-init next time
+        print("[Sticky] Storage message not found; will re-init on next startup.")
+        sticky_storage_message_id = None
+        return
+
+    data = {}
+    for cid, text in sticky_texts.items():
+        entry = {"text": text}
+        msg_id = sticky_messages.get(cid)
+        if msg_id is not None:
+            entry["message_id"] = msg_id
+        data[str(cid)] = entry
+
+    payload = "STICKY_DATA:" + json.dumps(data)
+    try:
+        await msg.edit(content=payload)
+    except discord.Forbidden:
+        print("[Sticky] Forbidden editing storage message.")
 
 # ────────────────────── DEAD CHAT HELPERS ──────────────────────
 
@@ -289,7 +437,9 @@ async def handle_dead_chat_message(message: discord.Message):
     minutes = DEAD_CHAT_IDLE_SECONDS // 60
     notice = await channel.send(
     f"{member.mention} has stolen the {role.mention} role after {minutes} minutes of silence.\n"
-    f"-# They can spam memes in the graveyard channel, shit-talk (within reason) the next person to steal the role, and **change their role color in https://discord.com/channels/1205041211610501120/1440989357535395911**! Theres also a random chance to win NITRO BASIC with this role."
+    f"-# They can spam memes in the graveyard channel, shit-talk (within reason) the next person to steal the role, and "
+    f"**change their role color in https://discord.com/channels/1205041211610501120/1440989357535395911**!\n"
+    f"-# There's also a random chance to win prizes with this role."
     )
     dead_last_notice_message_ids[channel.id] = notice.id
 
@@ -324,6 +474,9 @@ async def on_ready():
 
     # Initialize Dead Chat after startup
     await initialize_dead_chat()
+
+    # Initialize sticky storage (load persisted stickies)
+    await init_sticky_storage()
 
 
 @bot.event
@@ -363,6 +516,9 @@ async def on_message(message: discord.Message):
         text = sticky_texts[channel.id]
         new_msg = await channel.send(text)
         sticky_messages[channel.id] = new_msg.id
+
+        # Persist updated message id
+        await save_stickies()
 
 
 @bot.event
