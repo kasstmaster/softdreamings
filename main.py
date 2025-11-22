@@ -205,6 +205,39 @@ class SteamPrizeView(BasePrizeView):
     gift_title = "Steam Gift Card"
     rarity = "Rare"
 
+@bot.slash_command(
+    name="editbotmsg",
+    description="Edit a message previously sent by this bot"
+)
+async def editbotmsg(
+    ctx: discord.ApplicationContext,
+    channel: discord.Option(discord.TextChannel, "Channel containing the message", required=True),
+    message_id: discord.Option(str, "Message ID to edit", required=True),
+    new_text: discord.Option(str, "New message content", required=True),
+):
+    # Admin check
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("You need Administrator to use this.", ephemeral=True)
+
+    # Fetch message
+    try:
+        msg = await channel.fetch_message(int(message_id))
+    except Exception:
+        return await ctx.respond("Could not fetch that message. Check channel + ID.", ephemeral=True)
+
+    # Ensure it's from *this* bot
+    if msg.author != bot.user:
+        return await ctx.respond("I can only edit messages **sent by me**.", ephemeral=True)
+
+    # Edit message
+    try:
+        await msg.edit(content=new_text)
+    except Exception as e:
+        return await ctx.respond(f"Failed to edit message: `{e}`", ephemeral=True)
+
+    await ctx.respond("Message updated.", ephemeral=True)
+
+
 
 # ────────────────────── PRIZE SLASH COMMANDS ──────────────────────
 
