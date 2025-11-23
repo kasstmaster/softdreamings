@@ -1095,8 +1095,8 @@ COLOR_NAME_MAP = {
     "gold":    0xFFD700
 }
 
-@bot.slash_command(name="deadcolor", description="Change the Dead Chat role color")
-async def deadcolor(
+@bot.slash_command(name="color", description="Change the Dead Chat role color")
+async def color(
     ctx: discord.ApplicationContext,
     color: discord.Option(str, "Hex or name (e.g. #ff0000, ff0000, red, pink)", required=True),
 ):
@@ -1121,11 +1121,9 @@ async def deadcolor(
 
     raw = color.strip().lower()
 
-    # 1) Try color name
     if raw in COLOR_NAME_MAP:
         color_int = COLOR_NAME_MAP[raw]
     else:
-        # 2) Fallback to hex parsing
         value = raw
         if value.startswith("#"):
             value = value[1:]
