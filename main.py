@@ -318,17 +318,9 @@ async def info(ctx: discord.ApplicationContext):
         inline=False
     )
 
-    # Use the Members icon as thumbnail
     embed.set_thumbnail(url=MEMBERS_ICON)
-
-    # Use the Members icon in the footer instead of the user's avatar
-    embed.set_footer(
-        text=f"• Bot by Soft Dreamings",
-        icon_url=MEMBERS_ICON
-    )
-
-    embed.timestamp = datetime.utcnow()
-
+    embed.set_footer(text=f"• Bot by Soft Dreamings", icon_url=MEMBERS_ICON)
+    
     await ctx.respond(embed=embed)
 
 # ────────────────────── PRIZE VIEWS ──────────────────────
