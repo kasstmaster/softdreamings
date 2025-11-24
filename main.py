@@ -27,8 +27,6 @@ VIP_TEXT     = os.getenv("VIP_TEXT")
 
 STATUS_VC_ID = int(os.getenv("STATUS_VC_ID"))
 STATUS_LOG_CHANNEL_ID = int(os.getenv("STATUS_LOG_CHANNEL_ID"))
-BUTTON_1_LABEL = os.getenv("BUTTON_1_LABEL")
-BUTTON_1_URL   = os.getenv("BUTTON_1_URL")
 BUTTON_3_LABEL = os.getenv("BUTTON_3_LABEL")
 BUTTON_3_URL   = os.getenv("BUTTON_3_URL")
 
@@ -941,9 +939,15 @@ async def status_updater():
         embed.set_footer(text=f"Updated • {discord.utils.utcnow().strftime('%b %d • %I:%M %p UTC')}")
 
         view = discord.ui.View(timeout=None)
-        view.add_item(discord.ui.Button(label=BUTTON_1_LABEL, url=BUTTON_1_URL, style=discord.ButtonStyle.link))
-        view.add_item(discord.ui.Button(label=BUTTON_3_LABEL, url=BUTTON_3_URL, style=discord.ButtonStyle.link, emoji="🎟️"))
-
+        view.add_item(
+            discord.ui.Button(
+                label=BUTTON_3_LABEL,
+                url=BUTTON_3_URL,
+                style=discord.ButtonStyle.link,
+                emoji="🎟️",
+            )
+        )
+        
         await log_ch.send(embed=embed, view=view)
         print(f"New status → '{raw_status}' → fresh message sent")
 
