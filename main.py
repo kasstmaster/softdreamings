@@ -1126,6 +1126,45 @@ async def twitch_watcher():
 
         await asyncio.sleep(60) 
 
+# ────────────────────── VOICE CHAT AUTO-DELETE (5 MIN) ──────────────────────
+
+VOICE_CHAT_CHANNEL_ID = 1331501272804884490
+DELETE_DELAY_SECONDS = 300  # 5 minutes
+
+@bot.event
+async def on_message(message: discord.Message):
+    # ─── Existing handlers (keep them) ───
+    if message.author.bot:
+        return  # ignore bots completely (including our own bot)
+
+    # Existing code you already have
+    await handle_dead_chat_message(message)
+
+    # Sticky note handler (keep it)
+    if message.channel.id in sticky_texts:
+        # ... your existing sticky logic ...
+
+    # ─── NEW: 5-minute delete in the specific voice chat ───
+    if message.channel.id == VOICE_CHAT_CHANNEL_ID:
+        # Fire-and-forget task so the bot can keep processing other events
+        bot.loop.create_task(auto_delete_later(message))
+
+    # If you have bot.process_commands() or similar, keep it
+    # (not needed with discord.Bot slash-only setup)
+
+async def auto_delete_later(message: discord.Message):
+    await asyncio.sleep(DELETE_DELAY_SECONDS)
+    try:
+        await message.delete()
+        # Optional: log it somewhere if you want
+        # print(f"Deleted message from {message.author} in voice chat after 5 min")
+    except discord.NotFound:
+        pass  # already deleted
+    except discord.Forbidden:
+        print(f"[AutoDelete] Missing permissions to delete message {message.id}")
+    except discord.HTTPException as e:
+        print(f"[AutoDelete] Failed to delete message {message.id}: {e}")
+
 # ────────────────────── START BOT ──────────────────────
 
 bot.run(os.getenv("TOKEN"))
