@@ -259,9 +259,9 @@ async def info(ctx: discord.ApplicationContext):
         name="Prize Drop System",
         value=(
             "• Admins can drop clickable prize messages:\n"
-            "   • Movie Request (Common)\n"
-            "   • 1 Month Nitro Basic (Uncommon)\n"
-            "   • Steam Gift Card (Rare)\n"
+            "   ┣ Movie Request (Common)\n"
+            "   ┣ 1 Month Nitro Basic (Uncommon)\n"
+            "   ┗ Steam Gift Card (Rare)\n"
             "• First person to click **Claim** wins it instantly\n"
             "• Message deletes itself + public winner announcement"
         ),
@@ -282,8 +282,8 @@ async def info(ctx: discord.ApplicationContext):
     embed.add_field(
         name="Sticky Notes",
         value=(
-            "• `</sticky:1441148445758066773> set` – Pins a message that re-posts itself after every new message\n"
-            "• `</sticky:1441148445758066773> clear` – Removes it\n"
+            "• </sticky:1441148445758066773> set – Pins a message that re-posts itself after every new message\n"
+            "• </sticky:1441148445758066773> clear – Removes it\n"
             "• Persists across bot restarts"
         ),
         inline=False
