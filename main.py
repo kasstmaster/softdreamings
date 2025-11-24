@@ -683,6 +683,11 @@ async def on_ready():
     print(f"{bot.user} is online and ready!")
     bot.loop.create_task(twitch_watcher())
 
+    # Persistent views so old prize buttons keep working
+    bot.add_view(MoviePrizeView())
+    bot.add_view(NitroPrizeView())
+    bot.add_view(SteamPrizeView())
+
     # Reaction roles: add reactions to the configured message
     found = False
     for guild in bot.guilds:
@@ -973,14 +978,6 @@ async def fetch_twitch_streams():
 # ────────────────────── TWITCH WATCHER TASK ──────────────────────
 
 async def twitch_watcher():
-    """
-    Periodically checks Twitch for the configured channels and sends
-    a message when they go live.
-
-    Message format:
-    <:twitch:...> {username} is live ┃ {url}
-    -# @everyone
-    """
     await bot.wait_until_ready()
     print("Twitch watcher started")
 
@@ -1073,7 +1070,7 @@ async def color(
         await ctx.respond("You don't have the Dead Chat role.", ephemeral=True)
         return
 
-    raw = color.strip().lower()
+    raw = color.strip().lstrip('#')
 
     if raw in COLOR_NAME_MAP:
         color_int = COLOR_NAME_MAP[raw]
