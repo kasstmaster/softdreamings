@@ -28,6 +28,9 @@ VIP_TEXT     = os.getenv("VIP_TEXT")
 MEMBER_JOIN_ROLE_ID = int(os.getenv("MEMBER_JOIN_ROLE_ID"))  # role after 24h
 BOT_JOIN_ROLE_ID    = int(os.getenv("BOT_JOIN_ROLE_ID"))     # role instantly for bots
 
+VOICE_CHAT_CHANNEL_ID = 1331501272804884490   # ← the voice-chat text channel
+DELETE_DELAY_SECONDS = 300                    # 5 minutes = 300 seconds
+
 # ─────── TWITCH CONFIG (DIRECT VIA TWITCH API) ───────
 TWITCH_CLIENT_ID     = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
@@ -852,14 +855,27 @@ async def on_message(message: discord.Message):
                 await old_msg.delete()
             except discord.NotFound:
                 pass
-
         text = sticky_texts[channel.id]
         new_msg = await channel.send(text)
         sticky_messages[channel.id] = new_msg.id
-
         # Persist updated message id
         await save_stickies()
 
+    # ────────────────── NEW: 5-minute auto-delete in voice chat ──────────────────
+    if channel.id == VOICE_CHAT_CHANNEL_ID:
+        async def delete_later():
+            await asyncio.sleep(DELETE_DELAY_SECONDS)
+            try:
+                await message.delete()
+            except discord.NotFound:
+                pass    # already gone
+            except discord.Forbidden:
+                print(f"[AutoDelete] Missing permissions to delete message {message.id} in voice chat")
+            except Exception as e:
+                print(f"[AutoDelete] Error deleting message {message.id}: {e}")
+
+        bot.loop.create_task(delete_later())
+    # ─────────────────────────────────────────────────────────────────────────────
 
 @bot.event
 async def on_member_join(member: discord.Member):
@@ -1125,45 +1141,6 @@ async def twitch_watcher():
                 print(f"Twitch: {name} went offline")
 
         await asyncio.sleep(60) 
-
-# ────────────────────── VOICE CHAT AUTO-DELETE (5 MIN) ──────────────────────
-
-VOICE_CHAT_CHANNEL_ID = 1331501272804884490
-DELETE_DELAY_SECONDS = 300  # 5 minutes
-
-@bot.event
-async def on_message(message: discord.Message):
-    # ─── Existing handlers (keep them) ───
-    if message.author.bot:
-        return  # ignore bots completely (including our own bot)
-
-    # Existing code you already have
-    await handle_dead_chat_message(message)
-
-    # Sticky note handler (keep it)
-    if message.channel.id in sticky_texts:
-        # ... your existing sticky logic ...
-
-    # ─── NEW: 5-minute delete in the specific voice chat ───
-    if message.channel.id == VOICE_CHAT_CHANNEL_ID:
-        # Fire-and-forget task so the bot can keep processing other events
-        bot.loop.create_task(auto_delete_later(message))
-
-    # If you have bot.process_commands() or similar, keep it
-    # (not needed with discord.Bot slash-only setup)
-
-async def auto_delete_later(message: discord.Message):
-    await asyncio.sleep(DELETE_DELAY_SECONDS)
-    try:
-        await message.delete()
-        # Optional: log it somewhere if you want
-        # print(f"Deleted message from {message.author} in voice chat after 5 min")
-    except discord.NotFound:
-        pass  # already deleted
-    except discord.Forbidden:
-        print(f"[AutoDelete] Missing permissions to delete message {message.id}")
-    except discord.HTTPException as e:
-        print(f"[AutoDelete] Failed to delete message {message.id}: {e}")
 
 # ────────────────────── START BOT ──────────────────────
 
