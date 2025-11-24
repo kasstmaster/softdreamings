@@ -219,9 +219,9 @@ async def editbotmsg(
 @bot.slash_command(name="info", description="Show all features of the bot")
 async def info(ctx: discord.ApplicationContext):
     embed = discord.Embed(
-        title="Soft Dreamings Bot Features",
+        title="Admins - Bot Features",
         description="Here's everything I can do in this server!",
-        color=0x9b59b6  # Soft purple to match the vibe
+        color=0xf10790
     )
 
     embed.add_field(
@@ -282,8 +282,8 @@ async def info(ctx: discord.ApplicationContext):
     embed.add_field(
         name="Sticky Notes",
         value=(
-            "• `/sticky set <text>` – Pins a message that re-posts itself after every new message\n"
-            "• `/sticky clear` – Removes it\n"
+            "• `</sticky:1441148445758066773> set` – Pins a message that re-posts itself after every new message\n"
+            "• `</sticky:1441148445758066773> clear` – Removes it\n"
             "• Persists across bot restarts"
         ),
         inline=False
