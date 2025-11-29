@@ -6,6 +6,7 @@ import aiohttp
 import json
 from datetime import datetime
 
+############### CONSTANTS & CONFIG ###############
 intents = discord.Intents.default()
 intents.members = True
 intents.message_content = True
@@ -14,7 +15,6 @@ intents.voice_states = True
 DEBUG_GUILD_ID = int(os.getenv("DEBUG_GUILD_ID"))
 bot = discord.Bot(intents=intents, debug_guilds=[DEBUG_GUILD_ID])
 
-############### CONFIGURATION ###############
 WELCOME_CHANNEL_ID = int(os.getenv("WELCOME_CHANNEL_ID"))
 ROLE_TO_WATCH = int(os.getenv("ROLE_TO_WATCH"))
 WELCOME_TEXT = os.getenv("WELCOME_TEXT")
