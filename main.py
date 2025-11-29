@@ -514,25 +514,6 @@ async def editbotmsg(ctx, message_link: discord.Option(str, "Message link", requ
     await msg.edit(content=new_text)
     await ctx.respond("Message updated.", ephemeral=True)
 
-@bot.slash_command(name="info", description="Show all features of the bot")
-async def info(ctx):
-    MEMBERS_ICON = "https://images-ext-1.discordapp.net/external/2i-PtcLgl_msR0VTT2mGn_5dtQiC9DK56PxR4uJfCLI/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1440914703894188122/ff746b98459152a0ba7c4eff5530cd9d.png?format=webp&quality=lossless&width=534&height=534"
-    embed = discord.Embed(title="Admins - Bot Features", description="Here's everything I can do!", color=0xf10790)
-    embed.add_field(name="Welcome & Auto-Roles", value="• Custom welcome\n• Instant bot role\n• 24h human role", inline=False)
-    embed.add_field(name="Boost & VIP Announcements", value="• Boost thanks\n• VIP role announce", inline=False)
-    embed.add_field(name="Dead Chat Role Game", value="• Steal role after silence\n• Cooldown & ignore list", inline=False)
-    embed.add_field(name="Prize Drop System", value="• Movie / Nitro / Steam prizes\n• First click wins", inline=False)
-    embed.add_field(name="Admin Prize Tools", value="• /prize_movie\n• /prize_nitro\n• /prize_steam\n• /prize_announce", inline=False)
-    embed.add_field(name="Sticky Notes", value="• Persistent sticky messages", inline=False)
-    embed.add_field(name="Voice Chat Auto-Delete", value=f"• Deletes messages after {DELETE_DELAY_SECONDS//60} min", inline=False)
-    embed.add_field(name="Reaction Roles", value="• Auto add/remove on reaction", inline=False)
-    embed.add_field(name="Twitch Live Announcements", value="• @everyone when streamers go live", inline=False)
-    embed.add_field(name="Admin Utilities", value="• /say\n• /editbotmsg\n• /birthday_announce", inline=False)
-    embed.add_field(name="Moderation Logging", value="• Bans/kicks/leaves logged", inline=False)
-    embed.set_thumbnail(url=MEMBERS_ICON)
-    embed.set_footer(text="Bot by Soft Dreamings", icon_url=MEMBERS_ICON)
-    await ctx.respond(embed=embed)
-
 @bot.slash_command(name="prize_movie")
 async def prize_movie(ctx):
     if not ctx.author.guild_permissions.administrator:
