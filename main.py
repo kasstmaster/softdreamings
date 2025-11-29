@@ -290,6 +290,14 @@ async def info(ctx: discord.ApplicationContext):
         inline=False
     )
     embed.add_field(
+        name="Voice Chat Auto-Delete",
+        value=(
+            "• In the designated voice-chat text channel\n"
+            f"• Automatically deletes messages after {DELETE_DELAY_SECONDS // 60} minutes"
+        ),
+        inline=False
+    )
+    embed.add_field(
         name="Reaction Roles",
         value=(
             "• Automatically adds/removes roles when people react to configured messages\n"
