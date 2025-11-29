@@ -64,7 +64,7 @@ IGNORE_MEMBER_IDS = {775970689525612555}
 
 STICKY_STORAGE_CHANNEL_ID = int(os.getenv("STICKY_STORAGE_CHANNEL_ID", "0"))
 
-############### GLOBAL STATE ###############
+############### GLOBAL STATE / STORAGE ###############
 twitch_access_token: str | None = None
 twitch_live_state: dict[str, bool] = {}
 
@@ -77,7 +77,8 @@ sticky_messages: dict[int, int] = {}
 sticky_texts: dict[int, str] = {}
 sticky_storage_message_id: int | None = None
 
-############### LOGGING HELPERS ###############
+
+############### HELPER FUNCTIONS ###############
 async def log_to_thread(content: str):
     channel = bot.get_channel(MOD_LOG_THREAD_ID)
     if not channel:
@@ -97,166 +98,6 @@ async def log_to_bot_channel(content: str):
         await channel.send(content)
     except Exception:
         pass
-
-############### ADMIN COMMANDS ###############
-@bot.slash_command(name="say", description="Make the bot say something right here")
-async def say(ctx, message: discord.Option(str, "Message to send", required=True)):
-    if not ctx.author.guild_permissions.administrator:
-        return await ctx.respond("You need Administrator.", ephemeral=True)
-    await ctx.channel.send(message.replace("\\n", "\n"))
-    await ctx.respond("Sent!", ephemeral=True)
-
-@bot.slash_command(name="birthday_announce", description="Manually send the birthday message for a member")
-async def birthday_announce(ctx, member: discord.Option(discord.Member, "Member", required=True)):
-    if not ctx.author.guild_permissions.administrator:
-        return await ctx.respond("You need Administrator.", ephemeral=True)
-    ch = bot.get_channel(WELCOME_CHANNEL_ID)
-    if not ch:
-        return await ctx.respond("Welcome channel not found.", ephemeral=True)
-    msg = VIP_TEXT.replace("{mention}", member.mention) if VIP_TEXT else f"Happy birthday, {member.mention}!"
-    await ch.send(msg)
-    await ctx.respond(f"Sent birthday message for {member.mention}.", ephemeral=True)
-
-@bot.slash_command(name="editbotmsg", description="Edit a message previously sent by this bot")
-async def editbotmsg(ctx, message_link: discord.Option(str, "Message link", required=True), new_text: discord.Option(str, "New content", required=True)):
-    if not ctx.author.guild_permissions.administrator:
-        return await ctx.respond("You need Administrator.", ephemeral=True)
-    if "discord.com/channels/" not in message_link:
-        return await ctx.respond("Please provide a full message link.", ephemeral=True)
-    try:
-        parts = message_link.strip().split("/")
-        channel_id = int(parts[-2])
-        message_id = int(parts[-1])
-    except Exception:
-        return await ctx.respond("Invalid message link.", ephemeral=True)
-    channel = ctx.guild.get_channel(channel_id)
-    if not channel:
-        return await ctx.respond("Channel not found.", ephemeral=True)
-    try:
-        msg = await channel.fetch_message(message_id)
-    except Exception:
-        return await ctx.respond("Message not found.", ephemeral=True)
-    if msg.author != bot.user:
-        return await ctx.respond("I can only edit my own messages.", ephemeral=True)
-    await msg.edit(content=new_text)
-    await ctx.respond("Message updated.", ephemeral=True)
-
-@bot.slash_command(name="info", description="Show all features of the bot")
-async def info(ctx):
-    MEMBERS_ICON = "https://images-ext-1.discordapp.net/external/2i-PtcLgl_msR0VTT2mGn_5dtQiC9DK56PxR4uJfCLI/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1440914703894188122/ff746b98459152a0ba7c4eff5530cd9d.png?format=webp&quality=lossless&width=534&height=534"
-    embed = discord.Embed(title="Admins - Bot Features", description="Here's everything I can do!", color=0xf10790)
-    embed.add_field(name="Welcome & Auto-Roles", value="• Custom welcome\n• Instant bot role\n• 24h human role", inline=False)
-    embed.add_field(name="Boost & VIP Announcements", value="• Boost thanks\n• VIP role announce", inline=False)
-    embed.add_field(name="Dead Chat Role Game", value="• Steal role after silence\n• Cooldown & ignore list", inline=False)
-    embed.add_field(name="Prize Drop System", value="• Movie / Nitro / Steam prizes\n• First click wins", inline=False)
-    embed.add_field(name="Admin Prize Tools", value="• /prize_movie\n• /prize_nitro\n• /prize_steam\n• /prize_announce", inline=False)
-    embed.add_field(name="Sticky Notes", value="• Persistent sticky messages", inline=False)
-    embed.add_field(name="Voice Chat Auto-Delete", value=f"• Deletes messages after {DELETE_DELAY_SECONDS//60} min", inline=False)
-    embed.add_field(name="Reaction Roles", value="• Auto add/remove on reaction", inline=False)
-    embed.add_field(name="Twitch Live Announcements", value="• @everyone when streamers go live", inline=False)
-    embed.add_field(name="Admin Utilities", value="• /say\n• /editbotmsg\n• /birthday_announce", inline=False)
-    embed.add_field(name="Moderation Logging", value="• Bans/kicks/leaves logged", inline=False)
-    embed.set_thumbnail(url=MEMBERS_ICON)
-    embed.set_footer(text="Bot by Soft Dreamings", icon_url=MEMBERS_ICON)
-    await ctx.respond(embed=embed)
-
-############### PRIZE SYSTEM ###############
-class BasePrizeView(discord.ui.View):
-    gift_title: str = ""
-    rarity: str = ""
-    def __init__(self):
-        super().__init__(timeout=None)
-    @discord.ui.button(label="Claim Your Prize!", style=discord.ButtonStyle.primary)
-    async def claim_button(self, button: discord.ui.Button, interaction: discord.Interaction):
-        guild = interaction.guild
-        if not guild:
-            return await interaction.response.send_message("Server only.", ephemeral=True)
-        try:
-            await interaction.message.delete()
-        except:
-            pass
-        dead_role = guild.get_role(DEAD_CHAT_ROLE_ID)
-        role_mention = dead_role.mention if dead_role else "the Dead Chat role"
-        ch = guild.get_channel(WELCOME_CHANNEL_ID)
-        if ch:
-            await ch.send(f"<:prize:1441586959909781666> {interaction.user.mention} has won a **{self.gift_title}** with {role_mention}!\n-# *Drop Rate: {self.rarity}*")
-        await interaction.response.send_message(f"You claimed a **{self.gift_title}**!", ephemeral=True)
-
-class MoviePrizeView(BasePrizeView):
-    gift_title = "Movie Request"
-    rarity = "Common"
-class NitroPrizeView(BasePrizeView):
-    gift_title = "Month of Nitro Basic"
-    rarity = "Uncommon"
-class SteamPrizeView(BasePrizeView):
-    gift_title = "Steam Gift Card"
-    rarity = "Rare"
-
-@bot.slash_command(name="prize_movie")
-async def prize_movie(ctx):
-    if not ctx.author.guild_permissions.administrator:
-        return await ctx.respond("Admin only.", ephemeral=True)
-    await ctx.respond("**YOU'VE FOUND A PRIZE!**\nPrize: *Movie Request*\nDrop Rate: *Common*", view=MoviePrizeView())
-
-@bot.slash_command(name="prize_nitro")
-async def prize_nitro(ctx):
-    if not ctx.author.guild_permissions.administrator:
-        return await ctx.respond("Admin only.", ephemeral=True)
-    await ctx.respond("**YOU'VE FOUND A PRIZE!**\nPrize: *Month of Nitro Basic*\nDrop Rate: *Uncommon*", view=NitroPrizeView())
-
-@bot.slash_command(name="prize_steam")
-async def prize_steam(ctx):
-    if not ctx.author.guild_permissions.administrator:
-        return await ctx.respond("Admin only.", ephemeral=True)
-    await ctx.respond("**YOU'VE FOUND A PRIZE!**\nPrize: *Steam Gift Card*\nDrop Rate: *Rare*", view=SteamPrizeView())
-
-PRIZE_DEFS = {"Movie Request": "Common", "Month of Nitro Basic": "Uncommon", "Steam Gift Card": "Rare"}
-
-@bot.slash_command(name="prize_announce")
-async def prize_announce(ctx, member: discord.Option(discord.Member, required=True), prize: discord.Option(str, choices=list(PRIZE_DEFS.keys()), required=True)):
-    if not ctx.author.guild_permissions.administrator:
-        return await ctx.respond("Admin only.", ephemeral=True)
-    dead_role = ctx.guild.get_role(DEAD_CHAT_ROLE_ID)
-    role_mention = dead_role.mention if dead_role else "the Dead Chat role"
-    rarity = PRIZE_DEFS[prize]
-    await ctx.channel.send(f"<:prize:1441586959909781666> {member.mention} has won a **{prize}** with {role_mention}!\n-# *Drop Rate: {rarity}*")
-    await ctx.respond("Announcement sent.", ephemeral=True)
-
-############### STICKY NOTES ###############
-@bot.slash_command(name="sticky")
-async def sticky(ctx, action: discord.Option(str, choices=["set", "clear"], required=True), text: discord.Option(str, required=False)):
-    if not ctx.author.guild_permissions.administrator:
-        return await ctx.respond("Admin only.", ephemeral=True)
-    if action == "set":
-        if not text:
-            return await ctx.respond("Text required.", ephemeral=True)
-        sticky_texts[ctx.channel.id] = text
-        old_id = sticky_messages.get(ctx.channel.id)
-        if old_id:
-            try:
-                msg = await ctx.channel.fetch_message(old_id)
-                await msg.edit(content=text)
-                await ctx.respond("Sticky updated.", ephemeral=True)
-            except discord.NotFound:
-                msg = await ctx.channel.send(text)
-                sticky_messages[ctx.channel.id] = msg.id
-                await ctx.respond("Sticky created.", ephemeral=True)
-        else:
-            msg = await ctx.channel.send(text)
-            sticky_messages[ctx.channel.id] = msg.id
-            await ctx.respond("Sticky created.", ephemeral=True)
-        await save_stickies()
-    else:
-        old_id = sticky_messages.pop(ctx.channel.id, None)
-        sticky_texts.pop(ctx.channel.id, None)
-        if old_id:
-            try:
-                msg = await ctx.channel.fetch_message(old_id)
-                await msg.delete()
-            except discord.NotFound:
-                pass
-        await save_stickies()
-        await ctx.respond("Sticky cleared.", ephemeral=True)
 
 async def init_sticky_storage():
     global sticky_storage_message_id
@@ -304,7 +145,6 @@ async def save_stickies():
         data[str(cid)] = entry
     await msg.edit(content="STICKY_DATA:" + json.dumps(data))
 
-############### DEAD CHAT SYSTEM ###############
 async def initialize_dead_chat():
     global dead_current_holder_id
     if not DEAD_CHAT_CHANNEL_IDS or DEAD_CHAT_ROLE_ID == 0:
@@ -364,7 +204,104 @@ async def handle_dead_chat_message(message: discord.Message):
     notice = await message.channel.send(f"{message.author.mention} has stolen the {role.mention} role after {minutes}+ minutes of silence.\n-# There's a random chance to win prizes with this role.")
     dead_last_notice_message_ids[message.channel.id] = notice.id
 
-############### EVENTS ###############
+async def get_twitch_token():
+    global twitch_access_token
+    if not TWITCH_CLIENT_ID or not TWITCH_CLIENT_SECRET:
+        return None
+    url = "https://id.twitch.tv/oauth2/token"
+    params = {"client_id": TWITCH_CLIENT_ID, "client_secret": TWITCH_CLIENT_SECRET, "grant_type": "client_credentials"}
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, params=params) as resp:
+            if resp.status == 200:
+                data = await resp.json()
+                twitch_access_token = data["access_token"]
+                return twitch_access_token
+    return None
+
+async def fetch_twitch_streams():
+    global twitch_access_token
+    if not twitch_access_token:
+        await get_twitch_token()
+    if not twitch_access_token:
+        return {}
+    headers = {"Client-ID": TWITCH_CLIENT_ID, "Authorization": f"Bearer {twitch_access_token}"}
+    params = [("user_login", name) for name in TWITCH_CHANNELS]
+    async with aiohttp.ClientSession() as session:
+        async with session.get("https://api.twitch.tv/helix/streams", headers=headers, params=params) as resp:
+            if resp.status == 401:
+                twitch_access_token = None
+                await get_twitch_token()
+                headers["Authorization"] = f"Bearer {twitch_access_token}"
+                async with session.get("https://api.twitch.tv/helix/streams", headers=headers, params=params) as resp2:
+                    data = await resp2.json()
+            elif resp.status == 200:
+                data = await resp.json()
+            else:
+                return {}
+    result = {s["user_login"].lower(): s for s in data.get("data", [])}
+    return result
+
+
+############### VIEWS / UI COMPONENTS ###############
+class BasePrizeView(discord.ui.View):
+    gift_title: str = ""
+    rarity: str = ""
+    def __init__(self):
+        super().__init__(timeout=None)
+    @discord.ui.button(label="Claim Your Prize!", style=discord.ButtonStyle.primary)
+    async def claim_button(self, button: discord.ui.Button, interaction: discord.Interaction):
+        guild = interaction.guild
+        if not guild:
+            return await interaction.response.send_message("Server only.", ephemeral=True)
+        try:
+            await interaction.message.delete()
+        except:
+            pass
+        dead_role = guild.get_role(DEAD_CHAT_ROLE_ID)
+        role_mention = dead_role.mention if dead_role else "the Dead Chat role"
+        ch = guild.get_channel(WELCOME_CHANNEL_ID)
+        if ch:
+            await ch.send(f"<:prize:1441586959909781666> {interaction.user.mention} has won a **{self.gift_title}** with {role_mention}!\n-# *Drop Rate: {self.rarity}*")
+        await interaction.response.send_message(f"You claimed a **{self.gift_title}**!", ephemeral=True)
+
+class MoviePrizeView(BasePrizeView):
+    gift_title = "Movie Request"
+    rarity = "Common"
+class NitroPrizeView(BasePrizeView):
+    gift_title = "Month of Nitro Basic"
+    rarity = "Uncommon"
+class SteamPrizeView(BasePrizeView):
+    gift_title = "Steam Gift Card"
+    rarity = "Rare"
+
+
+############### AUTOCOMPLETE FUNCTIONS ###############
+
+
+############### BACKGROUND TASKS & SCHEDULERS ###############
+async def twitch_watcher():
+    await bot.wait_until_ready()
+    if not TWITCH_ANNOUNCE_CHANNEL_ID or not TWITCH_CHANNELS:
+        return
+    ch = bot.get_channel(TWITCH_ANNOUNCE_CHANNEL_ID)
+    if not ch:
+        return
+    for name in TWITCH_CHANNELS:
+        twitch_live_state[name] = False
+    while not bot.is_closed():
+        streams = await fetch_twitch_streams()
+        for name in TWITCH_CHANNELS:
+            is_live = name in streams
+            was_live = twitch_live_state.get(name, False)
+            if is_live and not was_live:
+                await ch.send(f"{TWITCH_EMOJI} {name} is live ┃ https://twitch.tv/{name}\n-# @everyone")
+                twitch_live_state[name] = True
+            elif not is_live and was_live:
+                twitch_live_state[name] = False
+        await asyncio.sleep(60)
+
+
+############### EVENT HANDLERS ###############
 @bot.event
 async def on_ready():
     print(f"{bot.user} is online!")
@@ -515,64 +452,134 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
     if role and member and not member.bot:
         await member.remove_roles(role)
 
-############### TWITCH LIVE WATCHER ###############
-async def get_twitch_token():
-    global twitch_access_token
-    if not TWITCH_CLIENT_ID or not TWITCH_CLIENT_SECRET:
-        return None
-    url = "https://id.twitch.tv/oauth2/token"
-    params = {"client_id": TWITCH_CLIENT_ID, "client_secret": TWITCH_CLIENT_SECRET, "grant_type": "client_credentials"}
-    async with aiohttp.ClientSession() as session:
-        async with session.post(url, params=params) as resp:
-            if resp.status == 200:
-                data = await resp.json()
-                twitch_access_token = data["access_token"]
-                return twitch_access_token
-    return None
 
-async def fetch_twitch_streams():
-    global twitch_access_token
-    if not twitch_access_token:
-        await get_twitch_token()
-    if not twitch_access_token:
-        return {}
-    headers = {"Client-ID": TWITCH_CLIENT_ID, "Authorization": f"Bearer {twitch_access_token}"}
-    params = [("user_login", name) for name in TWITCH_CHANNELS]
-    async with aiohttp.ClientSession() as session:
-        async with session.get("https://api.twitch.tv/helix/streams", headers=headers, params=params) as resp:
-            if resp.status == 401:
-                twitch_access_token = None
-                await get_twitch_token()
-                headers["Authorization"] = f"Bearer {twitch_access_token}"
-                async with session.get("https://api.twitch.tv/helix/streams", headers=headers, params=params) as resp2:
-                    data = await resp2.json()
-            elif resp.status == 200:
-                data = await resp.json()
-            else:
-                return {}
-    result = {s["user_login"].lower(): s for s in data.get("data", [])}
-    return result
+############### COMMAND GROUPS ###############
+@bot.slash_command(name="say", description="Make the bot say something right here")
+async def say(ctx, message: discord.Option(str, "Message to send", required=True)):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("You need Administrator.", ephemeral=True)
+    await ctx.channel.send(message.replace("\\n", "\n"))
+    await ctx.respond("Sent!", ephemeral=True)
 
-async def twitch_watcher():
-    await bot.wait_until_ready()
-    if not TWITCH_ANNOUNCE_CHANNEL_ID or not TWITCH_CHANNELS:
-        return
-    ch = bot.get_channel(TWITCH_ANNOUNCE_CHANNEL_ID)
+@bot.slash_command(name="birthday_announce", description="Manually send the birthday message for a member")
+async def birthday_announce(ctx, member: discord.Option(discord.Member, "Member", required=True)):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("You need Administrator.", ephemeral=True)
+    ch = bot.get_channel(WELCOME_CHANNEL_ID)
     if not ch:
-        return
-    for name in TWITCH_CHANNELS:
-        twitch_live_state[name] = False
-    while not bot.is_closed():
-        streams = await fetch_twitch_streams()
-        for name in TWITCH_CHANNELS:
-            is_live = name in streams
-            was_live = twitch_live_state.get(name, False)
-            if is_live and not was_live:
-                await ch.send(f"{TWITCH_EMOJI} {name} is live ┃ https://twitch.tv/{name}\n-# @everyone")
-                twitch_live_state[name] = True
-            elif not is_live and was_live:
-                twitch_live_state[name] = False
-        await asyncio.sleep(60)
+        return await ctx.respond("Welcome channel not found.", ephemeral=True)
+    msg = VIP_TEXT.replace("{mention}", member.mention) if VIP_TEXT else f"Happy birthday, {member.mention}!"
+    await ch.send(msg)
+    await ctx.respond(f"Sent birthday message for {member.mention}.", ephemeral=True)
 
-############### START BOT ###############
+@bot.slash_command(name="editbotmsg", description="Edit a message previously sent by this bot")
+async def editbotmsg(ctx, message_link: discord.Option(str, "Message link", required=True), new_text: discord.Option(str, "New content", required=True)):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("You need Administrator.", ephemeral=True)
+    if "discord.com/channels/" not in message_link:
+        return await ctx.respond("Please provide a full message link.", ephemeral=True)
+    try:
+        parts = message_link.strip().split("/")
+        channel_id = int(parts[-2])
+        message_id = int(parts[-1])
+    except Exception:
+        return await ctx.respond("Invalid message link.", ephemeral=True)
+    channel = ctx.guild.get_channel(channel_id)
+    if not channel:
+        return await ctx.respond("Channel not found.", ephemeral=True)
+    try:
+        msg = await channel.fetch_message(message_id)
+    except Exception:
+        return await ctx.respond("Message not found.", ephemeral=True)
+    if msg.author != bot.user:
+        return await ctx.respond("I can only edit my own messages.", ephemeral=True)
+    await msg.edit(content=new_text)
+    await ctx.respond("Message updated.", ephemeral=True)
+
+@bot.slash_command(name="info", description="Show all features of the bot")
+async def info(ctx):
+    MEMBERS_ICON = "https://images-ext-1.discordapp.net/external/2i-PtcLgl_msR0VTT2mGn_5dtQiC9DK56PxR4uJfCLI/%3Fsize%3D1024/https/cdn.discordapp.com/avatars/1440914703894188122/ff746b98459152a0ba7c4eff5530cd9d.png?format=webp&quality=lossless&width=534&height=534"
+    embed = discord.Embed(title="Admins - Bot Features", description="Here's everything I can do!", color=0xf10790)
+    embed.add_field(name="Welcome & Auto-Roles", value="• Custom welcome\n• Instant bot role\n• 24h human role", inline=False)
+    embed.add_field(name="Boost & VIP Announcements", value="• Boost thanks\n• VIP role announce", inline=False)
+    embed.add_field(name="Dead Chat Role Game", value="• Steal role after silence\n• Cooldown & ignore list", inline=False)
+    embed.add_field(name="Prize Drop System", value="• Movie / Nitro / Steam prizes\n• First click wins", inline=False)
+    embed.add_field(name="Admin Prize Tools", value="• /prize_movie\n• /prize_nitro\n• /prize_steam\n• /prize_announce", inline=False)
+    embed.add_field(name="Sticky Notes", value="• Persistent sticky messages", inline=False)
+    embed.add_field(name="Voice Chat Auto-Delete", value=f"• Deletes messages after {DELETE_DELAY_SECONDS//60} min", inline=False)
+    embed.add_field(name="Reaction Roles", value="• Auto add/remove on reaction", inline=False)
+    embed.add_field(name="Twitch Live Announcements", value="• @everyone when streamers go live", inline=False)
+    embed.add_field(name="Admin Utilities", value="• /say\n• /editbotmsg\n• /birthday_announce", inline=False)
+    embed.add_field(name="Moderation Logging", value="• Bans/kicks/leaves logged", inline=False)
+    embed.set_thumbnail(url=MEMBERS_ICON)
+    embed.set_footer(text="Bot by Soft Dreamings", icon_url=MEMBERS_ICON)
+    await ctx.respond(embed=embed)
+
+@bot.slash_command(name="prize_movie")
+async def prize_movie(ctx):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("Admin only.", ephemeral=True)
+    await ctx.respond("**YOU'VE FOUND A PRIZE!**\nPrize: *Movie Request*\nDrop Rate: *Common*", view=MoviePrizeView())
+
+@bot.slash_command(name="prize_nitro")
+async def prize_nitro(ctx):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("Admin only.", ephemeral=True)
+    await ctx.respond("**YOU'VE FOUND A PRIZE!**\nPrize: *Month of Nitro Basic*\nDrop Rate: *Uncommon*", view=NitroPrizeView())
+
+@bot.slash_command(name="prize_steam")
+async def prize_steam(ctx):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("Admin only.", ephemeral=True)
+    await ctx.respond("**YOU'VE FOUND A PRIZE!**\nPrize: *Steam Gift Card*\nDrop Rate: *Rare*", view=SteamPrizeView())
+
+PRIZE_DEFS = {"Movie Request": "Common", "Month of Nitro Basic": "Uncommon", "Steam Gift Card": "Rare"}
+
+@bot.slash_command(name="prize_announce")
+async def prize_announce(ctx, member: discord.Option(discord.Member, required=True), prize: discord.Option(str, choices=list(PRIZE_DEFS.keys()), required=True)):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("Admin only.", ephemeral=True)
+    dead_role = ctx.guild.get_role(DEAD_CHAT_ROLE_ID)
+    role_mention = dead_role.mention if dead_role else "the Dead Chat role"
+    rarity = PRIZE_DEFS[prize]
+    await ctx.channel.send(f"<:prize:1441586959909781666> {member.mention} has won a **{prize}** with {role_mention}!\n-# *Drop Rate: {rarity}*")
+    await ctx.respond("Announcement sent.", ephemeral=True)
+
+@bot.slash_command(name="sticky")
+async def sticky(ctx, action: discord.Option(str, choices=["set", "clear"], required=True), text: discord.Option(str, required=False)):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("Admin only.", ephemeral=True)
+    if action == "set":
+        if not text:
+            return await ctx.respond("Text required.", ephemeral=True)
+        sticky_texts[ctx.channel.id] = text
+        old_id = sticky_messages.get(ctx.channel.id)
+        if old_id:
+            try:
+                msg = await ctx.channel.fetch_message(old_id)
+                await msg.edit(content=text)
+                await ctx.respond("Sticky updated.", ephemeral=True)
+            except discord.NotFound:
+                msg = await ctx.channel.send(text)
+                sticky_messages[ctx.channel.id] = msg.id
+                await ctx.respond("Sticky created.", ephemeral=True)
+        else:
+            msg = await ctx.channel.send(text)
+            sticky_messages[ctx.channel.id] = msg.id
+            await ctx.respond("Sticky created.", ephemeral=True)
+        await save_stickies()
+    else:
+        old_id = sticky_messages.pop(ctx.channel.id, None)
+        sticky_texts.pop(ctx.channel.id, None)
+        if old_id:
+            try:
+                msg = await ctx.channel.fetch_message(old_id)
+                await msg.delete()
+            except discord.NotFound:
+                pass
+        await save_stickies()
+        await ctx.respond("Sticky cleared.", ephemeral=True)
+
+
+############### ON_READY & BOT START ###############
 bot.run(os.getenv("TOKEN"))
