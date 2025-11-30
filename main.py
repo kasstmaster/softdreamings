@@ -41,8 +41,8 @@ BOOST_TEXT = os.getenv("BOOST_TEXT")
 VIP_TEXT = os.getenv("VIP_TEXT")
 MEMBER_JOIN_ROLE_ID = int(os.getenv("MEMBER_JOIN_ROLE_ID"))
 BOT_JOIN_ROLE_ID = int(os.getenv("BOT_JOIN_ROLE_ID"))
-AUTO_DELETE_CHANNEL_IDS = [1331501272804884490, 1444194142589554841, 1444206974395748423] # Channels: VC, movies, birthdays
-DELETE_DELAY_SECONDS = 3600
+AUTO_DELETE_CHANNEL_IDS = [int(x.strip()) for x in os.getenv("AUTO_DELETE_CHANNEL_IDS", "").split(",") if x.strip().isdigit()]
+DELETE_DELAY_SECONDS = int(os.getenv("DELETE_DELAY_SECONDS", "3600"))
 
 TWITCH_CLIENT_ID = os.getenv("TWITCH_CLIENT_ID")
 TWITCH_CLIENT_SECRET = os.getenv("TWITCH_CLIENT_SECRET")
@@ -79,9 +79,16 @@ DEAD_CHAT_ROLE_ID = int(os.getenv("DEAD_CHAT_ROLE_ID", "0"))
 DEAD_CHAT_CHANNEL_IDS = [int(x.strip()) for x in os.getenv("DEAD_CHAT_CHANNEL_IDS", "").split(",") if x.strip().isdigit()]
 DEAD_CHAT_IDLE_SECONDS = int(os.getenv("DEAD_CHAT_IDLE_SECONDS", "600"))
 DEAD_CHAT_COOLDOWN_SECONDS = int(os.getenv("DEAD_CHAT_COOLDOWN_SECONDS", "0"))
-IGNORE_MEMBER_IDS = {775970689525612555}
+IGNORE_MEMBER_IDS = {int(x.strip()) for x in os.getenv("IGNORE_MEMBER_IDS", "").split(",") if x.strip().isdigit()}
 
 STICKY_STORAGE_CHANNEL_ID = int(os.getenv("STICKY_STORAGE_CHANNEL_ID", "0"))
+
+PRIZE_EMOJI = os.getenv("PRIZE_EMOJI", "")
+_raw_prize_defs = os.getenv("PRIZE_DEFS", "")
+if _raw_prize_defs:
+    PRIZE_DEFS = json.loads(_raw_prize_defs)
+else:
+    PRIZE_DEFS = {}
 
 ############### GLOBAL STATE / STORAGE ###############
 twitch_access_token: str | None = None
@@ -279,7 +286,7 @@ class BasePrizeView(discord.ui.View):
         role_mention = dead_role.mention if dead_role else "the Dead Chat role"
         ch = guild.get_channel(WELCOME_CHANNEL_ID)
         if ch:
-            await ch.send(f"<:prize:1441586959909781666> {interaction.user.mention} has won a **{self.gift_title}** with {role_mention}!\n-# *Drop Rate: {self.rarity}*")
+            await ch.send(f"{PRIZE_EMOJI} {interaction.user.mention} has won a **{self.gift_title}** with {role_mention}!\n-# *Drop Rate: {self.rarity}*")
         await interaction.response.send_message(f"You claimed a **{self.gift_title}**!", ephemeral=True)
 
 class MoviePrizeView(BasePrizeView):
@@ -530,8 +537,6 @@ async def prize_steam(ctx):
         return await ctx.respond("Admin only.", ephemeral=True)
     await ctx.respond("**YOU'VE FOUND A PRIZE!**\nPrize: *Steam Gift Card*\nDrop Rate: *Rare*", view=SteamPrizeView())
 
-PRIZE_DEFS = {"Movie Request": "Common", "Month of Nitro Basic": "Uncommon", "Steam Gift Card": "Rare"}
-
 @bot.slash_command(name="prize_announce")
 async def prize_announce(ctx, member: discord.Option(discord.Member, required=True), prize: discord.Option(str, choices=list(PRIZE_DEFS.keys()), required=True)):
     if not ctx.author.guild_permissions.administrator:
@@ -539,7 +544,7 @@ async def prize_announce(ctx, member: discord.Option(discord.Member, required=Tr
     dead_role = ctx.guild.get_role(DEAD_CHAT_ROLE_ID)
     role_mention = dead_role.mention if dead_role else "the Dead Chat role"
     rarity = PRIZE_DEFS[prize]
-    await ctx.channel.send(f"<:prize:1441586959909781666> {member.mention} has won a **{prize}** with {role_mention}!\n-# *Drop Rate: {rarity}*")
+    await ctx.channel.send(f"{PRIZE_EMOJI} {member.mention} has won a **{prize}** with {role_mention}!\n-# *Drop Rate: {rarity}*")
     await ctx.respond("Announcement sent.", ephemeral=True)
 
 @bot.slash_command(name="sticky")
