@@ -377,13 +377,19 @@ async def on_message(message: discord.Message):
         sticky_messages[message.channel.id] = new_msg.id
         await save_stickies()
     if message.channel.id in AUTO_DELETE_CHANNEL_IDS:
-        async def delete_later():
-            await asyncio.sleep(DELETE_DELAY_SECONDS)
-            try:
-                await message.delete()
-            except:
-                pass
-        bot.loop.create_task(delete_later())
+        content = message.content.lower()
+        if not (
+            "happy birthday" in content
+            or "happy bday" in content
+            or "happy b-day" in content
+        ):
+            async def delete_later():
+                await asyncio.sleep(DELETE_DELAY_SECONDS)
+                try:
+                    await message.delete()
+                except:
+                    pass
+            bot.loop.create_task(delete_later())
     await bot.process_commands(message)
 
 @bot.event
