@@ -546,10 +546,10 @@ async def on_ready():
             except:
                 continue
             break
-    await init_deadchat_storage()
-    await initialize_dead_chat()
     await init_sticky_storage()
     await init_prize_storage()
+    await init_deadchat_storage()
+    await initialize_dead_chat()
     for p in list(movie_scheduled_prizes):
         pid = p.get("id")
         if pid is not None:
@@ -761,21 +761,6 @@ async def prize_init(ctx):
         f"steam_msg_id={steam_prize_storage_message_id}",
         ephemeral=True,
     )
-
-@bot.slash_command(name="storage_test", description="Test sending a message to the storage channel")
-async def storage_test(ctx):
-    if not ctx.author.guild_permissions.administrator:
-        return await ctx.respond("Admin only.", ephemeral=True)
-    ch = bot.get_channel(STORAGE_CHANNEL_ID)
-    if not ch:
-        return await ctx.respond(f"bot.get_channel({STORAGE_CHANNEL_ID}) returned None.", ephemeral=True)
-    if not isinstance(ch, discord.TextChannel):
-        return await ctx.respond(f"Channel {STORAGE_CHANNEL_ID} is not a text channel.", ephemeral=True)
-    try:
-        msg = await ch.send("STORAGE_TEST: if you see this, the bot can write here.")
-        return await ctx.respond(f"Sent test message to <#{STORAGE_CHANNEL_ID}> (ID {msg.id}).", ephemeral=True)
-    except Exception as e:
-        return await ctx.respond(f"Failed to send: {type(e).__name__}: {e}", ephemeral=True)
 
 @bot.slash_command(name="prize_list", description="List scheduled prizes")
 async def prize_list(
