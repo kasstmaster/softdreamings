@@ -557,18 +557,6 @@ async def on_ready():
                 pid = p.get("id")
                 if pid is not None:
                     bot.loop.create_task(run_scheduled_prize(prize_type, pid))
-    for p in list(movie_scheduled_prizes):
-        pid = p.get("id")
-        if pid is not None:
-            bot.loop.create_task(run_scheduled_prize("movie", pid))
-    for p in list(nitro_scheduled_prizes):
-        pid = p.get("id")
-        if pid is not None:
-            bot.loop.create_task(run_scheduled_prize("nitro", pid))
-    for p in list(steam_scheduled_prizes):
-        pid = p.get("id")
-        if pid is not None:
-            bot.loop.create_task(run_scheduled_prize("steam", pid))
 
 @bot.event
 async def on_member_update(before, after):
