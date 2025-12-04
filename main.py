@@ -538,10 +538,15 @@ async def on_ready():
     bot.add_view(NitroPrizeView())
     bot.add_view(SteamPrizeView())
     for guild in bot.guilds:
+        found = False
         for channel in guild.text_channels:
             try:
                 msg = await channel.fetch_message(REACTION_ROLE_MESSAGE_ID)
-            except:
+            except discord.NotFound:
+                continue
+            except discord.Forbidden:
+                continue
+            except discord.HTTPException:
                 continue
             else:
                 for emoji in reaction_roles:
@@ -549,7 +554,10 @@ async def on_ready():
                         await msg.add_reaction(emoji)
                     except:
                         pass
+                found = True
                 break
+        if found:
+            break
     await init_sticky_storage()
     await init_prize_storage()
     await init_deadchat_storage()
