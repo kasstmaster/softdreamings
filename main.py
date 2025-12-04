@@ -697,6 +697,28 @@ async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
 
 
 ############### COMMAND GROUPS ###############
+@bot.slash_command(name="deadchat_rescan", description="Force-scan all dead-chat channels for latest message timestamps")
+async def deadchat_rescan(ctx):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("Admin only.", ephemeral=True)
+    count = 0
+    async with ctx.typing():
+        for channel_id in DEAD_CHAT_CHANNEL_IDS:
+            channel = bot.get_channel(channel_id)
+            if not channel or not isinstance(channel, discord.TextChannel):
+                continue
+            try:
+                async for message in channel.history(limit=1, oldest_first=False):
+                    if message.author.bot:
+                        continue
+                    deadchat_last_times[channel_id] = message.created_at.isoformat() + "Z"
+                    count += 1
+                    break
+            except:
+                pass
+        await save_deadchat_storage()
+    await ctx.respond(f"Rescan complete — found latest message in {count}/{len(DEAD_CHAT_CHANNEL_IDS)} dead-chat channels and saved timestamps.", ephemeral=True)
+    
 @bot.slash_command(name="prize_init", description="Manually create prize storage messages")
 async def prize_init(ctx):
     if not ctx.author.guild_permissions.administrator:
