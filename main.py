@@ -699,6 +699,13 @@ async def editbotmsg(ctx, message_id: str, line1: str, line2: str, line3: str, l
     await msg.edit(content=new_content)
     await ctx.respond("Message updated.", ephemeral=True)
 
+@bot.slash_command(name="prize_init", description="Initialize prize storage messages")
+async def prize_init(ctx):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("Admin only.", ephemeral=True)
+    await init_prize_storage()
+    await ctx.respond("Prize storage initialized (or already present).", ephemeral=True)
+
 @bot.slash_command(name="prize_list", description="List scheduled prizes")
 async def prize_list(
     ctx,
