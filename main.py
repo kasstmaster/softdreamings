@@ -24,6 +24,7 @@ import asyncio
 import aiohttp
 import json
 from datetime import datetime
+from discord import TextChannel
 
 ############### CONSTANTS & CONFIG ###############
 intents = discord.Intents.default()
