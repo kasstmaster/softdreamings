@@ -83,7 +83,7 @@ IGNORE_MEMBER_IDS = {int(x.strip()) for x in os.getenv("IGNORE_MEMBER_IDS", "").
 MONTH_CHOICES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 MONTH_TO_NUM = {name: i for i, name in enumerate(MONTH_CHOICES, start=1)}
 
-STICKY_STORAGE_CHANNEL_ID = int(os.getenv("STICKY_STORAGE_CHANNEL_ID", "0"))
+STORAGE_CHANNEL_ID = int(os.getenv("STORAGE_CHANNEL_ID", "0"))
 
 PRIZE_EMOJI = os.getenv("PRIZE_EMOJI", "")
 _raw_prize_defs = os.getenv("PRIZE_DEFS", "")
@@ -135,9 +135,9 @@ async def log_to_bot_channel(content: str):
 
 async def init_sticky_storage():
     global sticky_storage_message_id
-    if STICKY_STORAGE_CHANNEL_ID == 0:
+    if STORAGE_CHANNEL_ID == 0:
         return
-    ch = bot.get_channel(STICKY_STORAGE_CHANNEL_ID)
+    ch = bot.get_channel(STORAGE_CHANNEL_ID)
     if not isinstance(ch, discord.TextChannel):
         return
     storage_msg = None
@@ -162,9 +162,9 @@ async def init_sticky_storage():
             pass
 
 async def save_stickies():
-    if STICKY_STORAGE_CHANNEL_ID == 0 or sticky_storage_message_id is None:
+    if STORAGE_CHANNEL_ID == 0 or sticky_storage_message_id is None:
         return
-    ch = bot.get_channel(STICKY_STORAGE_CHANNEL_ID)
+    ch = bot.get_channel(STORAGE_CHANNEL_ID)
     if not ch:
         return
     try:
@@ -188,9 +188,9 @@ def parse_schedule_datetime(when: str) -> datetime | None:
 async def init_prize_storage():
     global movie_prize_storage_message_id, nitro_prize_storage_message_id, steam_prize_storage_message_id
     global movie_scheduled_prizes, nitro_scheduled_prizes, steam_scheduled_prizes
-    if STICKY_STORAGE_CHANNEL_ID == 0:
+    if STORAGE_CHANNEL_ID == 0:
         return
-    ch = bot.get_channel(STICKY_STORAGE_CHANNEL_ID)
+    ch = bot.get_channel(STORAGE_CHANNEL_ID)
     if not isinstance(ch, discord.TextChannel):
         return
     movie_msg = None
@@ -239,9 +239,9 @@ async def init_prize_storage():
         pass
 
 async def save_prize_storage():
-    if STICKY_STORAGE_CHANNEL_ID == 0:
+    if STORAGE_CHANNEL_ID == 0:
         return
-    ch = bot.get_channel(STICKY_STORAGE_CHANNEL_ID)
+    ch = bot.get_channel(STORAGE_CHANNEL_ID)
     if not ch:
         return
     if movie_prize_storage_message_id:
