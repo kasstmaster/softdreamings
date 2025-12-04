@@ -706,7 +706,13 @@ async def prize_init(ctx):
     if not ctx.author.guild_permissions.administrator:
         return await ctx.respond("Admin only.", ephemeral=True)
     await init_prize_storage()
-    await ctx.respond("Prize storage initialized (or already present).", ephemeral=True)
+    await ctx.respond(
+        f"Prize storage initialized.\n"
+        f"movie_msg_id={movie_prize_storage_message_id}\n"
+        f"nitro_msg_id={nitro_prize_storage_message_id}\n"
+        f"steam_msg_id={steam_prize_storage_message_id}",
+        ephemeral=True,
+    )
 
 @bot.slash_command(name="storage_test", description="Test sending a message to the storage channel")
 async def storage_test(ctx):
