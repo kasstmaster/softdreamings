@@ -96,10 +96,11 @@ else:
 twitch_access_token: str | None = None
 twitch_live_state: dict[str, bool] = {}
 
-dead_last_message_time: dict[int, datetime] = {}
 dead_current_holder_id: int | None = None
 dead_last_notice_message_ids: dict[int, int | None] = {}
 dead_last_win_time: dict[int, datetime] = {}
+deadchat_last_times: dict[int, str] = {}
+deadchat_storage_message_id: int | None = None
 movie_prize_storage_message_id: int | None = None
 nitro_prize_storage_message_id: int | None = None
 steam_prize_storage_message_id: int | None = None
@@ -344,27 +345,28 @@ async def initialize_dead_chat():
             dead_current_holder_id = role.members[0].id
             break
     for chan_id in DEAD_CHAT_CHANNEL_IDS:
-        ch = bot.get_channel(chan_id)
-        if not ch or not isinstance(ch, discord.TextChannel):
+        if chan_id in deadchat_last_times:
             continue
-        try:
-            async for msg in ch.history(limit=50):
-                if msg.author.bot or msg.author.id in IGNORE_MEMBER_IDS:
-                    continue
-                dead_last_message_time[chan_id] = msg.created_at
-                break
-        except:
-            pass
-        dead_last_message_time.setdefault(chan_id, discord.utils.utcnow())
+        deadchat_last_times[chan_id] = discord.utils.utcnow().isoformat() + "Z"
+    await save_deadchat_storage()
 
 async def handle_dead_chat_message(message: discord.Message):
     global dead_current_holder_id
     if DEAD_CHAT_ROLE_ID == 0 or message.channel.id not in DEAD_CHAT_CHANNEL_IDS or message.author.id in IGNORE_MEMBER_IDS:
         return
     now = discord.utils.utcnow()
-    last_time = dead_last_message_time.get(message.channel.id)
-    dead_last_message_time[message.channel.id] = now
-    if not last_time or (now - last_time).total_seconds() < DEAD_CHAT_IDLE_SECONDS:
+    cid = message.channel.id
+    now_s = now.isoformat() + "Z"
+    last_raw = deadchat_last_times.get(cid)
+    deadchat_last_times[cid] = now_s
+    await save_deadchat_storage()
+    if not last_raw:
+        return
+    try:
+        last_time = datetime.fromisoformat(last_raw.replace("Z", ""))
+    except:
+        return
+    if (now - last_time).total_seconds() < DEAD_CHAT_IDLE_SECONDS:
         return
     role = message.guild.get_role(DEAD_CHAT_ROLE_ID)
     if not role or role in message.author.roles:
@@ -391,6 +393,44 @@ async def handle_dead_chat_message(message: discord.Message):
     minutes = DEAD_CHAT_IDLE_SECONDS // 60
     notice = await message.channel.send(f"{message.author.mention} has stolen the {role.mention} role after {minutes}+ minutes of silence.\n-# There's a random chance to win prizes with this role.")
     dead_last_notice_message_ids[message.channel.id] = notice.id
+
+async def init_deadchat_storage():
+    global deadchat_storage_message_id, deadchat_last_times
+    if STORAGE_CHANNEL_ID == 0:
+        return
+    ch = bot.get_channel(STORAGE_CHANNEL_ID)
+    if not isinstance(ch, discord.TextChannel):
+        return
+    storage_msg = None
+    async for msg in ch.history(limit=50, oldest_first=True):
+        if msg.author == bot.user and msg.content.startswith("DEADCHAT_DATA:"):
+            storage_msg = msg
+            break
+    if not storage_msg:
+        storage_msg = await ch.send("DEADCHAT_DATA:{}")
+    deadchat_storage_message_id = storage_msg.id
+    raw = storage_msg.content[len("DEADCHAT_DATA:"):]
+    try:
+        data = json.loads(raw or "{}")
+        for cid_str, ts in data.items():
+            try:
+                deadchat_last_times[int(cid_str)] = ts
+            except:
+                pass
+    except:
+        pass
+
+async def save_deadchat_storage():
+    if STORAGE_CHANNEL_ID == 0 or deadchat_storage_message_id is None:
+        return
+    ch = bot.get_channel(STORAGE_CHANNEL_ID)
+    if not ch:
+        return
+    try:
+        msg = await ch.fetch_message(deadchat_storage_message_id)
+    except:
+        return
+    await msg.edit(content="DEADCHAT_DATA:" + json.dumps(deadchat_last_times))
 
 async def get_twitch_token():
     global twitch_access_token
@@ -506,6 +546,7 @@ async def on_ready():
             except:
                 continue
             break
+    await init_deadchat_storage()
     await initialize_dead_chat()
     await init_sticky_storage()
     await init_prize_storage()
