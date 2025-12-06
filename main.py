@@ -68,6 +68,7 @@ DEAD_CHAT_RESET_HOUR_UTC = int(os.getenv("DEAD_CHAT_RESET_HOUR_UTC", "0"))
 
 INFECTED_ROLE_ID = int(os.getenv("INFECTED_ROLE_ID", "0"))
 INFECTED_MESSAGE_TEMPLATE = os.getenv("INFECTED_MESSAGE_TEMPLATE", "{member} has an infection... gross.")
+INFECTED_ANNOUNCE_CHANNEL_ID = int(os.getenv("INFECTED_ANNOUNCE_CHANNEL_ID", "0"))
 
 STORAGE_CHANNEL_ID = int(os.getenv("STORAGE_CHANNEL_ID", "0"))
 
@@ -276,8 +277,7 @@ async def trigger_plague_infection(member: discord.Member):
         return
     await member.add_roles(infected_role, reason="Caught the monthly Dead Chat plague")
     await member.guild.get_channel(DEAD_CHAT_CHANNEL_IDS[0]).send(
-        f"**PLAGUE OUTBREAK** {member.mention} has been **INFECTED** for 3 days!\n"
-        "The infection is now burned out for this month."
+        f"**ALERT** {member.mention} has been **INFECTED** for 3 days! 🤢"
     )
     expires_at = (datetime.utcnow() + timedelta(days=3)).isoformat() + "Z"
     infected_members[member.id] = expires_at
@@ -959,13 +959,22 @@ async def on_member_update(before, after):
         if role.id == BIRTHDAY_ROLE_ID:
             if BIRTHDAY_TEXT:
                 await ch.send(BIRTHDAY_TEXT.replace("{mention}", after.mention))
-    if INFECTED_ROLE_ID != 0 and WELCOME_CHANNEL_ID != 0:
+    if INFECTED_ROLE_ID != 0 and INFECTED_ANNOUNCE_CHANNEL_ID != 0:
         infected_role = after.guild.get_role(INFECTED_ROLE_ID)
         if infected_role and infected_role in new_roles:
-            announce_ch = bot.get_channel(WELCOME_CHANNEL_ID)
+            announce_ch = bot.get_channel(INFECTED_ANNOUNCE_CHANNEL_ID)
             if announce_ch:
-                msg = INFECTED_MESSAGE_TEMPLATE.replace("{member}", after.mention)
-                await announce_ch.send(msg)
+                msg_text = INFECTED_MESSAGE_TEMPLATE.replace("{member}", after.mention)
+                sent = await announce_ch.send(msg_text)
+
+                async def delete_later(m: discord.Message):
+                    await asyncio.sleep(1200)
+                    try:
+                        await m.delete()
+                    except:
+                        pass
+
+                bot.loop.create_task(delete_later(sent))
 
 @bot.event
 async def on_message(message: discord.Message):
