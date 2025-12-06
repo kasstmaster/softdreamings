@@ -54,28 +54,6 @@ TWITCH_CHANNELS = [c.strip().lower() for c in os.getenv("TWITCH_CHANNELS", "").s
 TWITCH_ANNOUNCE_CHANNEL_ID = int(os.getenv("TWITCH_ANNOUNCE_CHANNEL_ID"))
 TWITCH_EMOJI = os.getenv("TWITCH_EMOJI")
 
-REACTION_ROLE_MESSAGE_ID = int(os.getenv("REACTION_ROLE_MESSAGE_ID"))
-reaction_roles = {}
-_raw_pairs = os.getenv("REACTION_ROLES", "")
-if _raw_pairs:
-    for pair in _raw_pairs.split(","):
-        if ":" in pair:
-            emoji_raw, role_id = pair.split(":", 1)
-            emoji_raw = emoji_raw.strip()
-            role_id = role_id.strip()
-
-            if emoji_raw.startswith("<") and emoji_raw.endswith(">"):
-                try:
-                    parts = emoji_raw.strip("<>").split(":")
-                    name = parts[-2]
-                    key = name
-                except:
-                    key = emoji_raw
-            else:
-                key = emoji_raw
-
-            reaction_roles[key] = int(role_id)
-
 MOD_LOG_THREAD_ID = int(os.getenv("MOD_LOG_THREAD_ID"))
 BOT_LOG_CHANNEL_ID = int(os.getenv("BOT_LOG_CHANNEL_ID", "0"))
 
@@ -781,27 +759,6 @@ async def on_ready():
     bot.add_view(NitroPrizeView())
     bot.add_view(SteamPrizeView())
     bot.add_view(GameNotificationView())
-    for guild in bot.guilds:
-        found = False
-        for channel in guild.text_channels:
-            try:
-                msg = await channel.fetch_message(REACTION_ROLE_MESSAGE_ID)
-            except discord.NotFound:
-                continue
-            except discord.Forbidden:
-                continue
-            except discord.HTTPException:
-                continue
-            else:
-                for emoji in reaction_roles:
-                    try:
-                        await msg.add_reaction(emoji)
-                    except:
-                        pass
-                found = True
-                break
-        if found:
-            break
     await init_sticky_storage()
     await init_prize_storage()
     await init_deadchat_storage()
@@ -926,44 +883,6 @@ async def on_member_remove(member: discord.Member):
         await log_fn(f"{member.mention} was kicked by {moderator.mention if moderator else 'Unknown'}")
     else:
         await log_fn(f"{member.mention} has left the server")
-
-@bot.event
-async def on_raw_reaction_add(payload: discord.RawReactionActionEvent):
-    if payload.message_id != REACTION_ROLE_MESSAGE_ID:
-        return
-    if payload.emoji.is_custom_emoji():
-        key = payload.emoji.name
-    else:
-        key = str(payload.emoji)
-    role_id = reaction_roles.get(key)
-    if not role_id:
-        return
-    guild = bot.get_guild(payload.guild_id)
-    if not guild:
-        return
-    role = guild.get_role(role_id)
-    member = guild.get_member(payload.user_id)
-    if role and member and not member.bot:
-        await member.add_roles(role)
-
-@bot.event
-async def on_raw_reaction_remove(payload: discord.RawReactionActionEvent):
-    if payload.message_id != REACTION_ROLE_MESSAGE_ID:
-        return
-    if payload.emoji.is_custom_emoji():
-        key = payload.emoji.name
-    else:
-        key = str(payload.emoji)
-    role_id = reaction_roles.get(key)
-    if not role_id:
-        return
-    guild = bot.get_guild(payload.guild_id)
-    if not guild:
-        return
-    role = guild.get_role(role_id)
-    member = guild.get_member(payload.user_id)
-    if role and member and not member.bot:
-        await member.remove_roles(role)
 
 
 ############### COMMAND GROUPS ###############
