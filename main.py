@@ -191,39 +191,54 @@ async def log_exception(tag: str, exc: Exception):
 
 async def check_runtime_systems():
     problems = []
+    results = {
+        "CHANNELS": True,
+        "ROLES": True,
+        "AUTO_DELETE": True,
+        "DEAD_CHAT_CHANNELS": True,
+        "TWITCH_CONFIG": True,
+    }
     main_guild = bot.get_guild(DEBUG_GUILD_ID)
     if main_guild is None and bot.guilds:
         main_guild = bot.guilds[0]
     if main_guild is None:
         problems.append("Runtime: no guild found for checks")
-        return problems
+        results["CHANNELS"] = False
+        results["ROLES"] = False
+        return problems, results
     me = main_guild.me
     if me is None:
         problems.append("Runtime: unable to resolve bot member in main guild")
-        return problems
-    def check_channel_permissions(channel_id: int, label: str, need_manage: bool = False):
+        results["CHANNELS"] = False
+        results["ROLES"] = False
+        return problems, results
+    def fail(key: str, message: str):
+        problems.append(message)
+        if key in results:
+            results[key] = False
+    def check_channel_permissions(channel_id: int, label: str, key: str, need_manage: bool = False):
         if channel_id == 0:
             return
         channel = bot.get_channel(channel_id)
         if channel is None:
-            problems.append(f"{label}: channel {channel_id} not found")
+            fail(key, f"{label}: channel {channel_id} not found")
             return
         perms = channel.permissions_for(me)
         if not perms.view_channel or not perms.send_messages:
-            problems.append(f"{label}: insufficient permissions to view/send")
+            fail(key, f"{label}: insufficient permissions to view/send")
         if not perms.read_message_history:
-            problems.append(f"{label}: missing Read Message History")
+            fail(key, f"{label}: missing Read Message History")
         if need_manage and not perms.manage_messages:
-            problems.append(f"{label}: missing Manage Messages")
-    check_channel_permissions(STORAGE_CHANNEL_ID, "STORAGE_CHANNEL", need_manage=True)
-    check_channel_permissions(WELCOME_CHANNEL_ID, "WELCOME_CHANNEL")
-    check_channel_permissions(BOT_LOG_CHANNEL_ID, "BOT_LOG_CHANNEL")
-    check_channel_permissions(TWITCH_ANNOUNCE_CHANNEL_ID, "TWITCH_ANNOUNCE_CHANNEL")
-    check_channel_permissions(INFECTED_ANNOUNCE_CHANNEL_ID, "INFECTED_ANNOUNCE_CHANNEL", need_manage=True)
+            fail(key, f"{label}: missing Manage Messages")
+    check_channel_permissions(STORAGE_CHANNEL_ID, "STORAGE_CHANNEL", "CHANNELS", need_manage=True)
+    check_channel_permissions(WELCOME_CHANNEL_ID, "WELCOME_CHANNEL", "CHANNELS")
+    check_channel_permissions(BOT_LOG_CHANNEL_ID, "BOT_LOG_CHANNEL", "CHANNELS")
+    check_channel_permissions(TWITCH_ANNOUNCE_CHANNEL_ID, "TWITCH_ANNOUNCE_CHANNEL", "CHANNELS")
+    check_channel_permissions(INFECTED_ANNOUNCE_CHANNEL_ID, "INFECTED_ANNOUNCE_CHANNEL", "CHANNELS", need_manage=True)
     for cid in DEAD_CHAT_CHANNEL_IDS:
-        check_channel_permissions(cid, f"DEAD_CHAT_CHANNEL_{cid}", need_manage=True)
+        check_channel_permissions(cid, f"DEAD_CHAT_CHANNEL_{cid}", "DEAD_CHAT_CHANNELS", need_manage=True)
     for cid in AUTO_DELETE_CHANNEL_IDS:
-        check_channel_permissions(cid, f"AUTO_DELETE_CHANNEL_{cid}", need_manage=True)
+        check_channel_permissions(cid, f"AUTO_DELETE_CHANNEL_{cid}", "AUTO_DELETE", need_manage=True)
     roles_to_check = [
         (BIRTHDAY_ROLE_ID, "BIRTHDAY_ROLE_ID"),
         (MEMBER_JOIN_ROLE_ID, "MEMBER_JOIN_ROLE_ID"),
@@ -236,73 +251,129 @@ async def check_runtime_systems():
             continue
         role = main_guild.get_role(role_id)
         if role is None:
-            problems.append(f"{label}: role {role_id} not found in main guild")
+            fail("ROLES", f"{label}: role {role_id} not found in main guild")
     if TWITCH_CHANNELS and (not TWITCH_CLIENT_ID or not TWITCH_CLIENT_SECRET or TWITCH_ANNOUNCE_CHANNEL_ID == 0):
-        problems.append("TWITCH_CONFIG: missing client id/secret or announce channel")
-    return problems
+        fail("TWITCH_CONFIG", "TWITCH_CONFIG: missing client id/secret or announce channel")
+    return problems, results
 
 async def run_all_inits_with_logging():
     problems = []
+    storage = {
+        "STICKY": True,
+        "PRIZE": True,
+        "DEADCHAT": True,
+        "DEADCHAT_STATE": True,
+        "TWITCH_STATE": True,
+        "PLAGUE": True,
+        "MEMBERJOIN": True,
+    }
     try:
         await init_sticky_storage()
         if sticky_storage_message_id is None:
+            storage["STICKY"] = False
             problems.append("STICKY_DATA storage missing; run /sticky_init")
     except Exception as e:
+        storage["STICKY"] = False
         problems.append("init_sticky_storage failed")
         await log_exception("init_sticky_storage", e)
     try:
         await init_prize_storage()
         if movie_prize_storage_message_id is None or nitro_prize_storage_message_id is None or steam_prize_storage_message_id is None:
+            storage["PRIZE"] = False
             problems.append("PRIZE_* storage missing; run /prize_init")
     except Exception as e:
+        storage["PRIZE"] = False
         problems.append("init_prize_storage failed")
         await log_exception("init_prize_storage", e)
     try:
         await init_deadchat_storage()
         if deadchat_storage_message_id is None:
+            storage["DEADCHAT"] = False
             problems.append("DEADCHAT_DATA storage missing; run /deadchat_init")
     except Exception as e:
+        storage["DEADCHAT"] = False
         problems.append("init_deadchat_storage failed")
         await log_exception("init_deadchat_storage", e)
     try:
         await init_deadchat_state_storage()
         if deadchat_state_storage_message_id is None:
+            storage["DEADCHAT_STATE"] = False
             problems.append("DEADCHAT_STATE storage missing; run /deadchat_state_init")
     except Exception as e:
+        storage["DEADCHAT_STATE"] = False
         problems.append("init_deadchat_state_storage failed")
         await log_exception("init_deadchat_state_storage", e)
     try:
         await init_twitch_state_storage()
         if twitch_state_storage_message_id is None:
+            storage["TWITCH_STATE"] = False
             problems.append("TWITCH_STATE storage missing; run /twitch_state_init")
     except Exception as e:
+        storage["TWITCH_STATE"] = False
         problems.append("init_twitch_state_storage failed")
         await log_exception("init_twitch_state_storage", e)
     try:
         await init_plague_storage()
         if plague_storage_message_id is None:
+            storage["PLAGUE"] = False
             problems.append("PLAGUE_DATA storage missing; run /plague_init")
     except Exception as e:
+        storage["PLAGUE"] = False
         problems.append("init_plague_storage failed")
         await log_exception("init_plague_storage", e)
     try:
         await init_member_join_storage()
         if member_join_storage_message_id is None:
+            storage["MEMBERJOIN"] = False
             problems.append("MEMBERJOIN_DATA storage missing; run /memberjoin_init")
     except Exception as e:
+        storage["MEMBERJOIN"] = False
         problems.append("init_member_join_storage failed")
         await log_exception("init_member_join_storage", e)
     try:
-        runtime_problems = await check_runtime_systems()
+        runtime_problems, runtime_results = await check_runtime_systems()
         problems.extend(runtime_problems)
     except Exception as e:
+        runtime_results = {
+            "CHANNELS": False,
+            "ROLES": False,
+            "AUTO_DELETE": False,
+            "DEAD_CHAT_CHANNELS": False,
+            "TWITCH_CONFIG": False,
+        }
         problems.append("Runtime system checks failed")
         await log_exception("check_runtime_systems", e)
+    def mark(ok: bool, text: str) -> str:
+        return f"{'✅' if ok else '🚩'} {text}"
+    lines = []
+    lines.append("Startup check report:")
+    lines.append("")
+    lines.append("[STORAGE]")
+    lines.append(mark(storage["STICKY"], "Sticky storage"))
+    lines.append(mark(storage["DEADCHAT"], "Dead Chat storage"))
+    lines.append(mark(storage["DEADCHAT_STATE"], "Dead Chat state"))
+    lines.append(mark(storage["PLAGUE"], "Plague storage"))
+    lines.append(mark(storage["PRIZE"], "Prize storage (movie/nitro/steam)"))
+    lines.append(mark(storage["MEMBERJOIN"], "Member-join storage"))
+    lines.append(mark(storage["TWITCH_STATE"], "Twitch state storage"))
+    lines.append("")
+    lines.append("[RUNTIME CONFIG]")
+    lines.append(mark(runtime_results.get("CHANNELS", False), "Channels and basic permissions"))
+    lines.append(mark(runtime_results.get("ROLES", False), "Required roles present"))
+    lines.append(mark(runtime_results.get("DEAD_CHAT_CHANNELS", False), "Dead Chat channels ready"))
+    lines.append(mark(runtime_results.get("AUTO_DELETE", False), "Auto-delete channels ready"))
+    lines.append(mark(runtime_results.get("TWITCH_CONFIG", False), "Twitch config and announce channel"))
+    lines.append("")
     if problems:
-        summary = "Startup check: issues detected:\n" + "\n".join(problems)
+        lines.append("Details:")
+        for p in problems:
+            lines.append(f"🚩 {p}")
     else:
-        summary = "Startup check: all storage and runtime systems passed basic checks."
-    await log_to_bot_channel(summary)
+        lines.append("All systems passed basic storage + runtime checks.")
+    text = "\n".join(lines)
+    if len(text) > 1900:
+        text = text[:1900]
+    await log_to_bot_channel(text)
 
 async def find_storage_message(prefix: str) -> discord.Message | None:
     if STORAGE_CHANNEL_ID == 0:
