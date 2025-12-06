@@ -39,10 +39,10 @@ DEBUG_GUILD_ID = int(os.getenv("DEBUG_GUILD_ID"))
 bot = discord.Bot(intents=intents, debug_guilds=[DEBUG_GUILD_ID])
 
 WELCOME_CHANNEL_ID = int(os.getenv("WELCOME_CHANNEL_ID"))
-ROLE_TO_WATCH = int(os.getenv("ROLE_TO_WATCH"))
+BIRTHDAY_ROLE_ID = int(os.getenv("BIRTHDAY_ROLE_ID"))
 WELCOME_TEXT = os.getenv("WELCOME_TEXT")
 BOOST_TEXT = os.getenv("BOOST_TEXT")
-VIP_TEXT = os.getenv("VIP_TEXT")
+BIRTHDAY_TEXT = os.getenv("BIRTHDAY_TEXT")
 MEMBER_JOIN_ROLE_ID = int(os.getenv("MEMBER_JOIN_ROLE_ID"))
 BOT_JOIN_ROLE_ID = int(os.getenv("BOT_JOIN_ROLE_ID"))
 AUTO_DELETE_CHANNEL_IDS = [int(x.strip()) for x in os.getenv("AUTO_DELETE_CHANNEL_IDS", "").split(",") if x.strip().isdigit()]
@@ -956,9 +956,9 @@ async def on_member_update(before, after):
             await ch.send(BOOST_TEXT.replace("{mention}", after.mention))
     new_roles = set(after.roles) - set(before.roles)
     for role in new_roles:
-        if role.id == ROLE_TO_WATCH:
-            if VIP_TEXT:
-                await ch.send(VIP_TEXT.replace("{mention}", after.mention))
+        if role.id == BIRTHDAY_ROLE_ID:
+            if BIRTHDAY_TEXT:
+                await ch.send(BIRTHDAY_TEXT.replace("{mention}", after.mention))
     if INFECTED_ROLE_ID != 0 and WELCOME_CHANNEL_ID != 0:
         infected_role = after.guild.get_role(INFECTED_ROLE_ID)
         if infected_role and infected_role in new_roles:
@@ -1163,7 +1163,7 @@ async def birthday_announce(ctx, member: discord.Option(discord.Member, "Member"
     ch = bot.get_channel(WELCOME_CHANNEL_ID)
     if not ch:
         return await ctx.respond("Welcome channel not found.", ephemeral=True)
-    msg = VIP_TEXT.replace("{mention}", member.mention) if VIP_TEXT else f"Happy birthday, {member.mention}!"
+    msg = BIRTHDAY_TEXT.replace("{mention}", member.mention) if BIRTHDAY_TEXT else f"Happy birthday, {member.mention}!"
     await ch.send(msg)
     await ctx.respond(f"Sent birthday message for {member.mention}.", ephemeral=True)
 
