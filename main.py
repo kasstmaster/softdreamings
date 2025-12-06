@@ -101,7 +101,7 @@ IGNORE_MEMBER_IDS = {int(x.strip()) for x in os.getenv("IGNORE_MEMBER_IDS", "").
 MONTH_CHOICES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 MONTH_TO_NUM = {name: i for i, name in enumerate(MONTH_CHOICES, start=1)}
 
-PRIZE_PLAGUE_TRIGGER_HOUR_UTC = 12
+PRIZE_PLAGUE_TRIGGER_HOUR_UTC = int(os.getenv("PRIZE_PLAGUE_TRIGGER_HOUR_UTC", "12"))
 INFECTED_ROLE_ID = int(os.getenv("INFECTED_ROLE_ID", "0"))
 INFECTED_MESSAGE_TEMPLATE = "🦠 **INFECTION OUTBREAK!**"
 INFECTED_ANNOUNCE_CHANNEL_ID = int(os.getenv("INFECTED_ANNOUNCE_CHANNEL_ID", "0"))
