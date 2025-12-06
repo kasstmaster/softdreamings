@@ -100,6 +100,9 @@ sticky_messages: dict[int, int] = {}
 sticky_texts: dict[int, str] = {}
 sticky_storage_message_id: int | None = None
 
+pending_member_joins: list[dict] = []
+member_join_storage_message_id: int | None = None
+
 plague_scheduled: list[dict] = []
 plague_storage_message_id: int | None = None
 infected_members: dict[int, str] = {}
@@ -176,6 +179,44 @@ async def save_stickies():
                 entry["message_id"] = sticky_messages[cid]
             data[str(cid)] = entry
         await msg.edit(content="STICKY_DATA:" + json.dumps(data))
+    except:
+        pass
+
+async def init_member_join_storage():
+    global member_join_storage_message_id, pending_member_joins
+    if STORAGE_CHANNEL_ID == 0:
+        return
+    ch = bot.get_channel(STORAGE_CHANNEL_ID)
+    if not isinstance(ch, discord.TextChannel):
+        return
+    storage_msg = None
+    async for msg in ch.history(limit=50, oldest_first=True):
+        if msg.author == bot.user and msg.content.startswith("MEMBERJOIN_DATA:"):
+            storage_msg = msg
+            break
+    if not storage_msg:
+        await log_to_bot_channel("MEMBERJOIN_DATA message not found → Run /memberjoin_init first")
+        return
+    member_join_storage_message_id = storage_msg.id
+    raw = storage_msg.content[len("MEMBERJOIN_DATA:"):]
+    try:
+        data = json.loads(raw or "[]")
+        if isinstance(data, list):
+            pending_member_joins[:] = data
+        else:
+            pending_member_joins[:] = []
+    except:
+        pending_member_joins[:] = []
+
+async def save_member_join_storage():
+    if STORAGE_CHANNEL_ID == 0 or member_join_storage_message_id is None:
+        return
+    ch = bot.get_channel(STORAGE_CHANNEL_ID)
+    if not ch or not isinstance(ch, TextChannel):
+        return
+    try:
+        msg = await ch.fetch_message(member_join_storage_message_id)
+        await msg.edit(content="MEMBERJOIN_DATA:" + json.dumps(pending_member_joins))
     except:
         pass
 
@@ -830,6 +871,47 @@ async def infected_watcher():
             await save_plague_storage()
         await asyncio.sleep(3600)
 
+async def member_join_watcher():
+    await bot.wait_until_ready()
+    if MEMBER_JOIN_ROLE_ID == 0:
+        return
+    while not bot.is_closed():
+        now = datetime.utcnow()
+        remaining = []
+        changed = False
+        for entry in pending_member_joins:
+            assign_at_str = entry.get("assign_at")
+            guild_id = entry.get("guild_id")
+            member_id = entry.get("member_id")
+            if not assign_at_str or not guild_id or not member_id:
+                continue
+            try:
+                assign_at = datetime.fromisoformat(assign_at_str.replace("Z", ""))
+            except:
+                continue
+            if now >= assign_at:
+                guild = bot.get_guild(guild_id)
+                if not guild:
+                    continue
+                member = guild.get_member(member_id)
+                if not member:
+                    continue
+                role = guild.get_role(MEMBER_JOIN_ROLE_ID)
+                if not role:
+                    continue
+                if role not in member.roles:
+                    try:
+                        await member.add_roles(role, reason="Delayed member join role")
+                    except:
+                        pass
+                changed = True
+            else:
+                remaining.append(entry)
+        if changed or len(remaining) != len(pending_member_joins):
+            pending_member_joins[:] = remaining
+            await save_member_join_storage()
+        await asyncio.sleep(300)
+
 
 ############### EVENT HANDLERS ###############
 @bot.event
@@ -845,9 +927,11 @@ async def on_ready():
     await init_deadchat_state_storage()
     await init_twitch_state_storage()
     await init_plague_storage()
+    await init_member_join_storage()
     bot.loop.create_task(twitch_watcher())
     bot.loop.create_task(deadchat_reset_loop())
     bot.loop.create_task(infected_watcher())
+    bot.loop.create_task(member_join_watcher())
     if sticky_storage_message_id is None:
         print("STORAGE NOT INITIALIZED — Run /sticky_init, /prize_init and /deadchat_init")
     else:
@@ -927,13 +1011,15 @@ async def on_member_join(member: discord.Member):
     if ch and WELCOME_TEXT:
         await ch.send(WELCOME_TEXT.replace("{mention}", member.mention))
     if MEMBER_JOIN_ROLE_ID:
-        async def delayed_role():
-            await asyncio.sleep(86400)
-            if member in member.guild.members:
-                role = member.guild.get_role(MEMBER_JOIN_ROLE_ID)
-                if role:
-                    await member.add_roles(role)
-        bot.loop.create_task(delayed_role())
+        assign_at = datetime.utcnow() + timedelta(days=1)
+        pending_member_joins.append(
+            {
+                "guild_id": member.guild.id,
+                "member_id": member.id,
+                "assign_at": assign_at.isoformat() + "Z",
+            }
+        )
+        await save_member_join_storage()
 
 @bot.event
 async def on_member_ban(guild, user):
@@ -990,6 +1076,18 @@ async def deadchat_rescan(ctx):
                 pass
         await save_deadchat_storage()
     await ctx.respond(f"Rescan complete — found latest message in {count}/{len(DEAD_CHAT_CHANNEL_IDS)} dead-chat channels and saved timestamps.", ephemeral=True)
+
+@bot.slash_command(name="memberjoin_init", description="Create member-join storage message")
+async def memberjoin_init(ctx):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("Admin only.", ephemeral=True)
+    ch = bot.get_channel(STORAGE_CHANNEL_ID)
+    if not isinstance(ch, discord.TextChannel):
+        return await ctx.respond("Invalid storage channel", ephemeral=True)
+    msg = await ch.send("MEMBERJOIN_DATA:[]")
+    global member_join_storage_message_id
+    member_join_storage_message_id = msg.id
+    await ctx.respond(f"Member join storage created: {msg.id}", ephemeral=True)
 
 @bot.slash_command(name="deadchat_state_init", description="Create DEADCHAT_STATE storage message")
 async def deadchat_state_init(ctx):
