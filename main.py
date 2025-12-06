@@ -61,9 +61,12 @@ import os
 import asyncio
 import aiohttp
 import json
+import traceback
+import sys
 from datetime import datetime, timedelta
 from discord import TextChannel
 from discord.ui import Select
+
 
 ############### CONSTANTS & CONFIG ###############
 intents = discord.Intents.default()
@@ -178,6 +181,70 @@ async def log_to_bot_channel(content: str):
         await channel.send(content)
     except Exception:
         pass
+
+async def log_exception(tag: str, exc: Exception):
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    text = f"{tag}: {exc}\n{tb}"
+    if len(text) > 1900:
+        text = text[:1900]
+    await log_to_bot_channel(text)
+
+async def run_all_inits_with_logging():
+    problems = []
+    try:
+        await init_sticky_storage()
+        if sticky_storage_message_id is None:
+            problems.append("STICKY_DATA storage missing; run /sticky_init")
+    except Exception as e:
+        problems.append("init_sticky_storage failed")
+        await log_exception("init_sticky_storage", e)
+    try:
+        await init_prize_storage()
+        if movie_prize_storage_message_id is None or nitro_prize_storage_message_id is None or steam_prize_storage_message_id is None:
+            problems.append("PRIZE_* storage missing; run /prize_init")
+    except Exception as e:
+        problems.append("init_prize_storage failed")
+        await log_exception("init_prize_storage", e)
+    try:
+        await init_deadchat_storage()
+        if deadchat_storage_message_id is None:
+            problems.append("DEADCHAT_DATA storage missing; run /deadchat_init")
+    except Exception as e:
+        problems.append("init_deadchat_storage failed")
+        await log_exception("init_deadchat_storage", e)
+    try:
+        await init_deadchat_state_storage()
+        if deadchat_state_storage_message_id is None:
+            problems.append("DEADCHAT_STATE storage missing; run /deadchat_state_init")
+    except Exception as e:
+        problems.append("init_deadchat_state_storage failed")
+        await log_exception("init_deadchat_state_storage", e)
+    try:
+        await init_twitch_state_storage()
+        if twitch_state_storage_message_id is None:
+            problems.append("TWITCH_STATE storage missing; run /twitch_state_init")
+    except Exception as e:
+        problems.append("init_twitch_state_storage failed")
+        await log_exception("init_twitch_state_storage", e)
+    try:
+        await init_plague_storage()
+        if plague_storage_message_id is None:
+            problems.append("PLAGUE_DATA storage missing; run /plague_init")
+    except Exception as e:
+        problems.append("init_plague_storage failed")
+        await log_exception("init_plague_storage", e)
+    try:
+        await init_member_join_storage()
+        if member_join_storage_message_id is None:
+            problems.append("MEMBERJOIN_DATA storage missing; run /memberjoin_init")
+    except Exception as e:
+        problems.append("init_member_join_storage failed")
+        await log_exception("init_member_join_storage", e)
+    if problems:
+        summary = "Startup check: issues detected:\n" + "\n".join(problems)
+    else:
+        summary = "Startup check: all storage systems loaded successfully."
+    await log_to_bot_channel(summary)
 
 async def find_storage_message(prefix: str) -> discord.Message | None:
     if STORAGE_CHANNEL_ID == 0:
@@ -844,19 +911,22 @@ async def twitch_watcher():
     if not ch:
         return
     while not bot.is_closed():
-        streams = await fetch_twitch_streams()
-        for name in TWITCH_CHANNELS:
-            is_live = name in streams
-            was_live = twitch_live_state.get(name, False)
-            if is_live and not was_live:
-                await ch.send(
-                    f"{TWITCH_EMOJI} {name} is live ┃ https://twitch.tv/{name}\n-# @everyone"
-                )
-                twitch_live_state[name] = True
-                await save_twitch_state()
-            elif not is_live and was_live:
-                twitch_live_state[name] = False
-                await save_twitch_state()
+        try:
+            streams = await fetch_twitch_streams()
+            for name in TWITCH_CHANNELS:
+                is_live = name in streams
+                was_live = twitch_live_state.get(name, False)
+                if is_live and not was_live:
+                    await ch.send(
+                        f"{TWITCH_EMOJI} {name} is live ┃ https://twitch.tv/{name}\n-# @everyone"
+                    )
+                    twitch_live_state[name] = True
+                    await save_twitch_state()
+                elif not is_live and was_live:
+                    twitch_live_state[name] = False
+                    await save_twitch_state()
+        except Exception as e:
+            await log_exception("twitch_watcher", e)
         await asyncio.sleep(60)
 
 async def infected_watcher():
@@ -864,30 +934,33 @@ async def infected_watcher():
     if INFECTED_ROLE_ID == 0:
         return
     while not bot.is_closed():
-        now = datetime.utcnow()
-        expired_ids = []
-        for mid, ts in list(infected_members.items()):
-            try:
-                expires = datetime.fromisoformat(ts.replace("Z", ""))
-            except:
-                continue
-            if now >= expires:
-                expired_ids.append(mid)
-        if expired_ids:
-            for guild in bot.guilds:
-                role = guild.get_role(INFECTED_ROLE_ID)
-                if not role:
+        try:
+            now = datetime.utcnow()
+            expired_ids = []
+            for mid, ts in list(infected_members.items()):
+                try:
+                    expires = datetime.fromisoformat(ts.replace("Z", ""))
+                except:
                     continue
+                if now >= expires:
+                    expired_ids.append(mid)
+            if expired_ids:
+                for guild in bot.guilds:
+                    role = guild.get_role(INFECTED_ROLE_ID)
+                    if not role:
+                        continue
+                    for mid in expired_ids:
+                        member = guild.get_member(mid)
+                        if member and role in member.roles:
+                            try:
+                                await member.remove_roles(role, reason="Plague expired")
+                            except:
+                                pass
                 for mid in expired_ids:
-                    member = guild.get_member(mid)
-                    if member and role in member.roles:
-                        try:
-                            await member.remove_roles(role, reason="Plague expired")
-                        except:
-                            pass
-            for mid in expired_ids:
-                infected_members.pop(mid, None)
-            await save_plague_storage()
+                    infected_members.pop(mid, None)
+                await save_plague_storage()
+        except Exception as e:
+            await log_exception("infected_watcher", e)
         await asyncio.sleep(3600)
 
 async def member_join_watcher():
@@ -895,40 +968,43 @@ async def member_join_watcher():
     if MEMBER_JOIN_ROLE_ID == 0:
         return
     while not bot.is_closed():
-        now = datetime.utcnow()
-        remaining = []
-        changed = False
-        for entry in pending_member_joins:
-            assign_at_str = entry.get("assign_at")
-            guild_id = entry.get("guild_id")
-            member_id = entry.get("member_id")
-            if not assign_at_str or not guild_id or not member_id:
-                continue
-            try:
-                assign_at = datetime.fromisoformat(assign_at_str.replace("Z", ""))
-            except:
-                continue
-            if now >= assign_at:
-                guild = bot.get_guild(guild_id)
-                if not guild:
+        try:
+            now = datetime.utcnow()
+            remaining = []
+            changed = False
+            for entry in pending_member_joins:
+                assign_at_str = entry.get("assign_at")
+                guild_id = entry.get("guild_id")
+                member_id = entry.get("member_id")
+                if not assign_at_str or not guild_id or not member_id:
                     continue
-                member = guild.get_member(member_id)
-                if not member:
+                try:
+                    assign_at = datetime.fromisoformat(assign_at_str.replace("Z", ""))
+                except:
                     continue
-                role = guild.get_role(MEMBER_JOIN_ROLE_ID)
-                if not role:
-                    continue
-                if role not in member.roles:
-                    try:
-                        await member.add_roles(role, reason="Delayed member join role")
-                    except:
-                        pass
-                changed = True
-            else:
-                remaining.append(entry)
-        if changed or len(remaining) != len(pending_member_joins):
-            pending_member_joins[:] = remaining
-            await save_member_join_storage()
+                if now >= assign_at:
+                    guild = bot.get_guild(guild_id)
+                    if not guild:
+                        continue
+                    member = guild.get_member(member_id)
+                    if not member:
+                        continue
+                    role = guild.get_role(MEMBER_JOIN_ROLE_ID)
+                    if not role:
+                        continue
+                    if role not in member.roles:
+                        try:
+                            await member.add_roles(role, reason="Delayed member join role")
+                        except:
+                            pass
+                    changed = True
+                else:
+                    remaining.append(entry)
+            if changed or len(remaining) != len(pending_member_joins):
+                pending_member_joins[:] = remaining
+                await save_member_join_storage()
+        except Exception as e:
+            await log_exception("member_join_watcher", e)
         await asyncio.sleep(300)
 
 
@@ -940,13 +1016,7 @@ async def on_ready():
     bot.add_view(NitroPrizeView())
     bot.add_view(SteamPrizeView())
     bot.add_view(GameNotificationView())
-    await init_sticky_storage()
-    await init_prize_storage()
-    await init_deadchat_storage()
-    await init_deadchat_state_storage()
-    await init_twitch_state_storage()
-    await init_plague_storage()
-    await init_member_join_storage()
+    await run_all_inits_with_logging()
     bot.loop.create_task(twitch_watcher())
     bot.loop.create_task(infected_watcher())
     bot.loop.create_task(member_join_watcher())
@@ -1063,6 +1133,22 @@ async def on_member_remove(member: discord.Member):
     else:
         await log_fn(f"{member.mention} has left the server")
 
+@bot.event
+async def on_application_command_error(ctx, error):
+    await log_exception("application_command_error", error)
+    try:
+        await ctx.respond("An internal error occurred.", ephemeral=True)
+    except:
+        pass
+
+@bot.event
+async def on_error(event, *args, **kwargs):
+    exc_type, exc, tb = sys.exc_info()
+    if exc is None:
+        await log_to_bot_channel(f"Unhandled error in event {event} with no exception info.")
+    else:
+        await log_exception(f"Unhandled error in event {event}", exc)
+
 
 ############### COMMAND GROUPS ###############
 @bot.slash_command(name="storage_debug", description="Show storage message IDs for all systems")
@@ -1098,21 +1184,16 @@ async def storage_scan(ctx):
 async def storage_refresh(ctx):
     if not ctx.author.guild_permissions.administrator:
         return await ctx.respond("Admin only.", ephemeral=True)
-
     await ctx.defer(ephemeral=True)
-
     try:
-        await init_sticky_storage()
-        await init_member_join_storage()
-        await init_plague_storage()
-        await init_deadchat_storage()
-        await init_deadchat_state_storage()
-        await init_prize_storage()
-        await init_twitch_state_storage()
+        await run_all_inits_with_logging()
         await ctx.followup.send("Storage reload complete. Run /storage_debug to verify.", ephemeral=True)
     except Exception as e:
-        await log_to_bot_channel(f"storage_refresh failed: {e}")
-        await ctx.followup.send(f"storage_refresh error: {e}", ephemeral=True)
+        await log_exception("storage_refresh", e)
+        try:
+            await ctx.followup.send(f"storage_refresh error: {e}", ephemeral=True)
+        except:
+            pass
 
 @bot.slash_command(name="deadchat_rescan", description="Force-scan all dead-chat channels for latest message timestamps")
 async def deadchat_rescan(ctx):
