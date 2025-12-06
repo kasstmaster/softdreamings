@@ -61,13 +61,13 @@ Has /deadchat_init, /deadchat_state_init, /deadchat_rescan to initialize or repa
 
 # 3. Dead Chat Plague System
 
-Monthly “contagious day” mechanic.
+Monthly “contagious window” mechanic.
 
 Features
 
-Admin schedules a plague day with /plague_infect.
+Admin schedules a plague window with /plague_infect.
 
-On plague day, the member who steals Dead Chat becomes infected.
+During this time, the member who steals Dead Chat becomes infected.
 
 Infected gets INFECTED_ROLE_ID for 3 days.
 
@@ -77,9 +77,9 @@ Storage
 
 `Saves:`
 
-scheduled plague days
+Saves the currently scheduled plague window (start timestamp + date string).
 
-infected members + expiry timestamps
+Saves infected members + expiry timestamps.
 
 # 4. Prize Drop System (Movie / Nitro / Steam)
 
@@ -194,6 +194,8 @@ bot joins
 
 plague events
 
+plague events
+
 dead chat errors
 
 storage issues
@@ -298,7 +300,7 @@ Dead Chat cooldown system
 
 Dead Chat win announcements
 
-Dead Chat plague system (scheduled infection days)
+Dead Chat plague system (one scheduled infection window; first Dead Chat steal after start gets infected)
 
 Infection role & expiration
 
