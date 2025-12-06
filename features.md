@@ -29,57 +29,57 @@ Dead Chat Role Mechanics
 
 Tracks activity timestamps per Dead Chat channel.
 
-If a channel is silent for DEAD_CHAT_IDLE_SECONDS, the next speaking member steals the Dead Chat role.
+If a channel is silent for `DEAD_CHAT_IDLE_SECONDS`, the next speaking member triggers a Dead Chat event: they steal the Dead Chat role if they don’t have it, or keep it and still count as the winner if they already hold it.
 
 Applies optional cooldowns per member.
 
 Dead Chat Win Announcements
 
-Announces the steal win.
+Announces the steal/win.
 
 Deletes previous win announcements.
 
-Notes plague events or prize chances.
+Notes plague events or prize drops.
 
 Daily Auto-Reset
 
-At hour DEAD_CHAT_RESET_HOUR_UTC, removes the Dead Chat role from all members.
+There is no daily auto-reset; the Dead Chat role only changes hands on qualifying Dead Chat events.
 
 Persistent Storage
 
 `Saves:`
 
-last message timestamps
+- last message timestamps  
+- last winner times  
+- last announcement message IDs  
+- current holder  
 
-last winner times
+Has `/deadchat_init`, `/deadchat_state_init`, `/deadchat_rescan` to initialize or repair.
 
-last announcement message IDs
-
-current holder
-
-Has /deadchat_init, /deadchat_state_init, /deadchat_rescan to initialize or repair.
+---
 
 # 3. Dead Chat Plague System
 
-Monthly “contagious window” mechanic.
+Monthly “contagious day” mechanic.
 
 Features
 
-Admin schedules a plague window with /plague_infect.
+Admin schedules a plague date with `/plague_infect`.
 
-During this time, the member who steals Dead Chat becomes infected.
+On that date, after `PRIZE_PLAGUE_TRIGGER_HOUR_UTC` (12:00 UTC), the first member to trigger a Dead Chat event becomes infected.
 
-Infected gets INFECTED_ROLE_ID for 3 days.
+Infected gets `INFECTED_ROLE_ID` for 3 days.
 
-Infection expires automatically via infected_watcher.
+Infection expires automatically via `infected_watcher`.
 
 Storage
 
 `Saves:`
 
-Saves the currently scheduled plague window (start timestamp + date string).
+- the currently scheduled plague date (date string)  
+- infected members + expiry timestamps  
 
-Saves infected members + expiry timestamps.
+---
 
 # 4. Prize Drop System (Movie / Nitro / Steam)
 
@@ -89,23 +89,18 @@ Features
 
 `Admin can:`
 
-drop instant prize messages (/prize_movie, /prize_nitro, /prize_steam without date)
-
-or schedule future drops (same commands with date)
-
-list scheduled prizes (/prize_list)
-
-delete scheduled prizes (/prize_delete)
-
-manually announce prizes (/prize_announce)
+- drop instant prize messages (`/prize_movie`, `/prize_nitro`, `/prize_steam` without date)  
+- schedule future drops (same commands with month/day date)  
+- list scheduled prizes (`/prize_list`)  
+- delete scheduled prizes (`/prize_delete`)  
+- manually announce prizes (`/prize_announce`)
 
 `Fully automated:`
 
-Schedules run in background and post the prize message when the time arrives.
-
-Each prize uses a persistent interactive button to claim prize.
-
-Sends an announcement to the welcome channel when claimed.
+- On any day, after `PRIZE_PLAGUE_TRIGGER_HOUR_UTC` (12:00 UTC), the first qualifying Dead Chat event for that date drops all prizes scheduled for that date into their configured channels.
+- Scheduled entries for that date are removed after they fire so they only trigger once.
+- Each prize uses a persistent interactive button to claim prize.
+- Sends an announcement to the welcome channel when claimed.
 
 # 5. Twitch Live Notification System
 Features
