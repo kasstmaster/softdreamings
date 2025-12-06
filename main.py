@@ -506,7 +506,7 @@ async def handle_dead_chat_message(message: discord.Message):
     if (now - last_time).total_seconds() < DEAD_CHAT_IDLE_SECONDS:
         return
     role = message.guild.get_role(DEAD_CHAT_ROLE_ID)
-    if not role or role in message.author.roles:
+    if not role:
         return
     if DEAD_CHAT_COOLDOWN_SECONDS > 0:
         last_win = dead_last_win_time.get(message.author.id)
