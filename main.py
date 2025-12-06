@@ -52,7 +52,7 @@
 # MEMBER
 # • Permissions: Standard chat + VC + app commands
 # • Commands:
-#   /birthdays /set /color /pick /pool /replace /search
+#   /birthdays /set /color /pick /pool /replace /search 
 # ============================================================
 
 ############### IMPORTS ###############
