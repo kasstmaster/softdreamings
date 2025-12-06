@@ -3,7 +3,7 @@ Welcome / Join / Leave System
 
 Sends custom welcome messages to WELCOME_CHANNEL_ID.
 
-**Assigns:**
+`Assigns:`
 
 BOT_JOIN_ROLE_ID to bots on join.
 
@@ -15,7 +15,7 @@ Birthday & Server Boost Announcements
 
 Detects role changes via on_member_update.
 
-**Posts:**
+`Posts:`
 
 BOOST_TEXT when a user boosts.
 
@@ -47,7 +47,7 @@ At hour DEAD_CHAT_RESET_HOUR_UTC, removes the Dead Chat role from all members.
 
 Persistent Storage
 
-**Saves:**
+`Saves:`
 
 last message timestamps
 
@@ -75,7 +75,7 @@ Infection expires automatically via infected_watcher.
 
 Storage
 
-**Saves:**
+`Saves:`
 
 scheduled plague days
 
@@ -87,7 +87,7 @@ Supports common / uncommon / rare prize drops triggered by Dead Chat or schedule
 
 Features
 
-**Admin can:**
+`Admin can:`
 
 drop instant prize messages (/prize_movie, /prize_nitro, /prize_steam without date)
 
@@ -99,7 +99,7 @@ delete scheduled prizes (/prize_delete)
 
 manually announce prizes (/prize_announce)
 
-**Fully automated:**
+`Fully automated:`
 
 Schedules run in background and post the prize message when the time arrives.
 
@@ -112,7 +112,7 @@ Features
 
 Watches listed Twitch channels via API.
 
-**When a channel goes live:**
+`When a channel goes live:`
 
 Sends announcement with @everyone.
 
@@ -128,7 +128,7 @@ Per-channel persistent sticky messages with UI buttons.
 
 Features
 
-**Admin can:**
+`Admin can:`
 
 /sticky set "text" → sets sticky
 
@@ -136,7 +136,7 @@ Features
 
 Bot automatically reposts the sticky whenever someone talks.
 
-**Stores:**
+`Stores:`
 
 sticky text
 
@@ -152,7 +152,7 @@ Features
 
 Clicking Get Notified opens a dropdown.
 
-**User selects roles for:**
+`User selects roles for:`
 
 General games
 
@@ -168,7 +168,7 @@ Replies ephemerally with changes.
 
 # 8. Auto-Delete Channels
 
-**For channels in AUTO_DELETE_CHANNEL_IDS:**
+`For channels in AUTO_DELETE_CHANNEL_IDS:`
 
 Deletes any message after DELETE_DELAY_SECONDS.
 
@@ -176,13 +176,13 @@ Birthday messages are exempt (detected via keywords).
 
 # 9. Logging System
 
-**Two destinations:**
+`Two destinations:`
 
 MOD_LOG_THREAD_ID
 
 BOT_LOG_CHANNEL_ID
 
-**Bot logs:**
+`Bot logs:`
 
 bans
 
@@ -202,7 +202,7 @@ storage issues
 
 Stored inside a hidden storage channel (STORAGE_CHANNEL_ID).
 
-**Subsystems that store persistent JSON:**
+`Subsystems that store persistent JSON:`
 
 Sticky messages
 
@@ -235,7 +235,7 @@ Manual birthday message.
 
 # 12. Background Loops
 
-**Running continuously:**
+`Running continuously:`
 
 twitch_watcher: checks live status every 60s
 
