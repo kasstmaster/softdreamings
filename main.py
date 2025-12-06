@@ -147,6 +147,18 @@ infected_announce_messages: dict[int, int] = {}
 
 
 ############### HELPER FUNCTIONS ###############
+async def debug_scan_storage_channel(limit: int = 20) -> str:
+    ch = bot.get_channel(STORAGE_CHANNEL_ID)
+    if not isinstance(ch, discord.TextChannel):
+        return "Storage channel not found."
+    lines = []
+    async for msg in ch.history(limit=limit, oldest_first=True):
+        prefix = msg.content[:40].replace("\n", "\\n")
+        lines.append(f"id={msg.id} author={msg.author.id} bot={msg.author.bot} content={prefix}")
+    if not lines:
+        return "No messages visible in storage channel."
+    return "\n".join(lines)
+
 async def log_to_thread(content: str):
     channel = bot.get_channel(MOD_LOG_THREAD_ID)
     if not channel:
@@ -1068,6 +1080,15 @@ async def storage_debug(
         f"twitch_state_storage_message_id: {twitch_state_storage_message_id}",
     ]
     await ctx.respond("Storage debug:\n" + "\n".join(lines), ephemeral=True)
+
+@bot.slash_command(name="storage_scan", description="Show what the bot sees in the storage channel")
+async def storage_scan(ctx):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("Admin only.", ephemeral=True)
+    text = await debug_scan_storage_channel()
+    if len(text) > 1900:
+        text = text[:1900] + "\n...[truncated]"
+    await ctx.respond(f"```{text}```", ephemeral=True)
 
 @bot.slash_command(name="deadchat_rescan", description="Force-scan all dead-chat channels for latest message timestamps")
 async def deadchat_rescan(ctx):
