@@ -313,9 +313,6 @@ async def trigger_plague_infection(member: discord.Member):
     if not infected_role or infected_role in member.roles:
         return
     await member.add_roles(infected_role, reason="Caught the monthly Dead Chat plague")
-    await member.guild.get_channel(DEAD_CHAT_CHANNEL_IDS[0]).send(
-        f"**ALERT** {member.mention} has been **INFECTED** for 3 days! 🤢"
-    )
     expires_at = (datetime.utcnow() + timedelta(days=3)).isoformat() + "Z"
     infected_members[member.id] = expires_at
     plague_scheduled.clear()
@@ -568,13 +565,22 @@ async def handle_dead_chat_message(message: discord.Message):
                     await m.delete()
                 except:
                     pass
-    minutes = DEAD_CHAT_IDLE_SECONDS // 60
-    notice_text = f"{message.author.mention} has stolen the {role.mention} role after {minutes}+ minutes of silence.\n"
     if triggered_plague:
-        notice_text += "-# The graveyard was contagious today… one victim has been chosen."
+        plague_text = (
+            f"**PLAGUE OUTBREAK**\n"
+            f"-# The sickness has chosen its host.\n"
+            f"-# {message.author.mention} bears the infection, binding the plague and ending today’s contagion.\n"
+            f"-# Those who claim Dead Chat after this moment will not be touched by the disease."
+        )
+        notice = await message.channel.send(plague_text)
     else:
-        notice_text += "-# There's a random chance to win prizes with this role."
-    notice = await message.channel.send(notice_text)
+        minutes = DEAD_CHAT_IDLE_SECONDS // 60
+        notice_text = (
+            f"{message.author.mention} has stolen the {role.mention} role after {minutes}+ minutes of silence.\n"
+            "-# There's a random chance to win prizes with this role."
+        )
+        notice = await message.channel.send(notice_text)
+    
     dead_last_notice_message_ids[message.channel.id] = notice.id
     await save_deadchat_state()
 
