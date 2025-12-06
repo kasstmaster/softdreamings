@@ -99,8 +99,10 @@ steam_scheduled_prizes: list[dict] = []
 sticky_messages: dict[int, int] = {}
 sticky_texts: dict[int, str] = {}
 sticky_storage_message_id: int | None = None
+
 plague_scheduled: list[dict] = []
 plague_storage_message_id: int | None = None
+infected_members: dict[int, str] = {}
 
 
 ############### HELPER FUNCTIONS ###############
@@ -178,7 +180,7 @@ async def save_stickies():
         pass
 
 async def init_plague_storage():
-    global plague_storage_message_id
+    global plague_storage_message_id, plague_scheduled, infected_members
     if STORAGE_CHANNEL_ID == 0:
         return
     ch = bot.get_channel(STORAGE_CHANNEL_ID)
@@ -194,9 +196,20 @@ async def init_plague_storage():
         return
     plague_storage_message_id = storage_msg.id
     try:
-        data = json.loads(storage_msg.content[len("PLAGUE_DATA:"):])
+        raw = storage_msg.content[len("PLAGUE_DATA:"):]
+        data = json.loads(raw or "[]")
         plague_scheduled.clear()
-        plague_scheduled.extend(data)
+        infected_members.clear()
+        if isinstance(data, list):
+            plague_scheduled.extend(data)
+        elif isinstance(data, dict):
+            plague_scheduled.extend(data.get("scheduled", []))
+            infected_raw = data.get("infected", {})
+            for mid_str, ts in infected_raw.items():
+                try:
+                    infected_members[int(mid_str)] = ts
+                except:
+                    pass
     except:
         pass
 
@@ -206,16 +219,13 @@ async def save_plague_storage():
     ch = bot.get_channel(STORAGE_CHANNEL_ID)
     if not ch or not isinstance(ch, TextChannel):
         return
+    payload = {
+        "scheduled": plague_scheduled,
+        "infected": {str(k): v for k, v in infected_members.items()},
+    }
     try:
         msg = await ch.fetch_message(plague_storage_message_id)
-        await msg.edit(content="PLAGUE_DATA:" + json.dumps(plague_scheduled))
-    except:
-        pass
-
-async def remove_infected_after_delay(member: discord.Member, infected_role: discord.Role):
-    await asyncio.sleep(3 * 24 * 60 * 60)
-    try:
-        await member.remove_roles(infected_role, reason="Plague expired")
+        await msg.edit(content="PLAGUE_DATA:" + json.dumps(payload))
     except:
         pass
 
@@ -228,7 +238,8 @@ async def trigger_plague_infection(member: discord.Member):
         f"**PLAGUE OUTBREAK** {member.mention} has been **INFECTED** for 3 days!\n"
         "The infection is now burned out for this month."
     )
-    bot.loop.create_task(remove_infected_after_delay(member, infected_role))
+    expires_at = (datetime.utcnow() + timedelta(days=3)).isoformat() + "Z"
+    infected_members[member.id] = expires_at
     plague_scheduled.clear()
     await save_plague_storage()
 
@@ -788,13 +799,42 @@ async def deadchat_reset_loop():
         except:
             pass
 
+async def infected_watcher():
+    await bot.wait_until_ready()
+    if INFECTED_ROLE_ID == 0:
+        return
+    while not bot.is_closed():
+        now = datetime.utcnow()
+        expired_ids = []
+        for mid, ts in list(infected_members.items()):
+            try:
+                expires = datetime.fromisoformat(ts.replace("Z", ""))
+            except:
+                continue
+            if now >= expires:
+                expired_ids.append(mid)
+        if expired_ids:
+            for guild in bot.guilds:
+                role = guild.get_role(INFECTED_ROLE_ID)
+                if not role:
+                    continue
+                for mid in expired_ids:
+                    member = guild.get_member(mid)
+                    if member and role in member.roles:
+                        try:
+                            await member.remove_roles(role, reason="Plague expired")
+                        except:
+                            pass
+            for mid in expired_ids:
+                infected_members.pop(mid, None)
+            await save_plague_storage()
+        await asyncio.sleep(3600)
+
 
 ############### EVENT HANDLERS ###############
 @bot.event
 async def on_ready():
     print(f"{bot.user} is online!")
-    bot.loop.create_task(twitch_watcher())
-    bot.loop.create_task(deadchat_reset_loop())
     bot.add_view(MoviePrizeView())
     bot.add_view(NitroPrizeView())
     bot.add_view(SteamPrizeView())
@@ -805,6 +845,9 @@ async def on_ready():
     await init_deadchat_state_storage()
     await init_twitch_state_storage()
     await init_plague_storage()
+    bot.loop.create_task(twitch_watcher())
+    bot.loop.create_task(deadchat_reset_loop())
+    bot.loop.create_task(infected_watcher())
     if sticky_storage_message_id is None:
         print("STORAGE NOT INITIALIZED — Run /sticky_init, /prize_init and /deadchat_init")
     else:
