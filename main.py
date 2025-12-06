@@ -27,6 +27,7 @@ import aiohttp
 import json
 from datetime import datetime
 from discord import TextChannel
+from discord.ui import Select
 
 ############### CONSTANTS & CONFIG ###############
 intents = discord.Intents.default()
@@ -645,15 +646,15 @@ class GameNotificationSelect(discord.ui.Select):
             text = "No changes."
         await interaction.response.send_message(text.strip(), ephemeral=True)
 
-class GameNotificationView(d discord.ui.View):
+class GameNotificationView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
-    @discord.ui.button(label="Get Notified", style= discord.ButtonStyle.grey, custom_id="persistent_game_notif_button")
-    async def button(self,  button: discord.ui.Button, interaction:  discord.Interaction):
+    @discord.ui.button(label="Get Notified", style=discord.ButtonStyle.grey, custom_id="persistent_game_notif_button")
+    async def button(self, button: discord.ui.Button, interaction: discord.Interaction):
         await interaction.response.send_message(
             "Choose the game notifications you want:",
-            view = GameNotificationSelect(),
-            ephemeral = True
+            view=GameNotificationSelectView(),
+            ephemeral=True
         )
 
 class GameNotificationSelectView(discord.ui.View):
