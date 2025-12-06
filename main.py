@@ -187,9 +187,13 @@ async def find_storage_message(prefix: str) -> discord.Message | None:
     if not isinstance(ch, discord.TextChannel):
         await log_to_bot_channel(f"find_storage_message: storage channel invalid for {prefix}")
         return None
-    async for msg in ch.history(limit=200, oldest_first=False):
-        if msg.content.startswith(prefix):
-            return msg
+    try:
+        async for msg in ch.history(limit=200, oldest_first=False):
+            if msg.content.startswith(prefix):
+                return msg
+    except Exception as e:
+        await log_to_bot_channel(f"find_storage_message error for {prefix}: {e}")
+        return None
     await log_to_bot_channel(f"find_storage_message: no storage message found for {prefix}")
     return None
 
