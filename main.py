@@ -25,7 +25,7 @@ import os
 import asyncio
 import aiohttp
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 from discord import TextChannel
 from discord.ui import Select
 
@@ -64,6 +64,7 @@ DEAD_CHAT_COOLDOWN_SECONDS = int(os.getenv("DEAD_CHAT_COOLDOWN_SECONDS", "0"))
 IGNORE_MEMBER_IDS = {int(x.strip()) for x in os.getenv("IGNORE_MEMBER_IDS", "").split(",") if x.strip().isdigit()}
 MONTH_CHOICES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]
 MONTH_TO_NUM = {name: i for i, name in enumerate(MONTH_CHOICES, start=1)}
+DEAD_CHAT_RESET_HOUR_UTC = int(os.getenv("DEAD_CHAT_RESET_HOUR_UTC", "0"))
 
 INFECTED_ROLE_ID = int(os.getenv("INFECTED_ROLE_ID", "0"))
 INFECTED_MESSAGE_TEMPLATE = os.getenv("INFECTED_MESSAGE_TEMPLATE", "{member} has an infection... gross.")
@@ -544,6 +545,23 @@ async def save_deadchat_state():
     except Exception as e:
         await log_to_bot_channel(f"Deadchat state save failed: {e}")
 
+async def reset_dead_chat_role():
+    global dead_current_holder_id
+    if DEAD_CHAT_ROLE_ID == 0:
+        return
+    for guild in bot.guilds:
+        role = guild.get_role(DEAD_CHAT_ROLE_ID)
+        if not role:
+            continue
+        for member in list(role.members):
+            try:
+                await member.remove_roles(role, reason="Daily Dead Chat reset")
+            except:
+                pass
+    dead_current_holder_id = None
+    dead_last_notice_message_ids.clear()
+    await save_deadchat_state()
+
 
 # Twitch state -------------------------------------------------
 async def init_twitch_state_storage():
@@ -749,12 +767,34 @@ async def twitch_watcher():
                 await save_twitch_state()
         await asyncio.sleep(60)
 
+async def deadchat_reset_loop():
+    await bot.wait_until_ready()
+    if DEAD_CHAT_ROLE_ID == 0:
+        return
+    while not bot.is_closed():
+        now = datetime.utcnow()
+        target = now.replace(
+            hour=DEAD_CHAT_RESET_HOUR_UTC,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+        if target <= now:
+            target = target + timedelta(days=1)
+        delay = (target - now).total_seconds()
+        await asyncio.sleep(delay)
+        try:
+            await reset_dead_chat_role()
+        except:
+            pass
+
 
 ############### EVENT HANDLERS ###############
 @bot.event
 async def on_ready():
     print(f"{bot.user} is online!")
     bot.loop.create_task(twitch_watcher())
+    bot.loop.create_task(deadchat_reset_loop())
     bot.add_view(MoviePrizeView())
     bot.add_view(NitroPrizeView())
     bot.add_view(SteamPrizeView())
