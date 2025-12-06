@@ -187,13 +187,12 @@ async def find_storage_message(prefix: str) -> discord.Message | None:
     if not isinstance(ch, discord.TextChannel):
         await log_to_bot_channel(f"find_storage_message: storage channel invalid for {prefix}")
         return None
-    for newest_first in (False, True):
-        async for msg in ch.history(limit=None, oldest_first=newest_first):
-            if msg.content.startswith(prefix):
-                return msg
+    async for msg in ch.history(limit=200, oldest_first=False):
+        if msg.content.startswith(prefix):
+            return msg
     await log_to_bot_channel(f"find_storage_message: no storage message found for {prefix}")
     return None
-    
+
 async def init_sticky_storage():
     global sticky_storage_message_id
     if STORAGE_CHANNEL_ID == 0:
@@ -1090,6 +1089,19 @@ async def storage_scan(ctx):
     if len(text) > 1900:
         text = text[:1900] + "\n...[truncated]"
     await ctx.respond(f"```{text}```", ephemeral=True)
+
+@bot.slash_command(name="storage_refresh", description="Rescan storage channel and reload storage message IDs")
+async def storage_refresh(ctx):
+    if not ctx.author.guild_permissions.administrator:
+        return await ctx.respond("Admin only.", ephemeral=True)
+    await init_sticky_storage()
+    await init_member_join_storage()
+    await init_plague_storage()
+    await init_deadchat_storage()
+    await init_deadchat_state_storage()
+    await init_prize_storage()
+    await init_twitch_state_storage()
+    await ctx.respond("Storage reload complete. Run /storage_debug to verify.", ephemeral=True)
 
 @bot.slash_command(name="deadchat_rescan", description="Force-scan all dead-chat channels for latest message timestamps")
 async def deadchat_rescan(ctx):
