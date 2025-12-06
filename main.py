@@ -88,7 +88,6 @@ MONTH_CHOICES = ["January", "February", "March", "April", "May", "June", "July",
 MONTH_TO_NUM = {name: i for i, name in enumerate(MONTH_CHOICES, start=1)}
 
 INFECTED_ROLE_ID = int(os.getenv("INFECTED_ROLE_ID", "0"))
-WELCOME_CHANNEL_ID = int(os.getenv("WELCOME_CHANNEL_ID", "0"))
 INFECTED_MESSAGE_TEMPLATE = os.getenv("INFECTED_MESSAGE_TEMPLATE", "{member} has an infection... gross.")
 
 STORAGE_CHANNEL_ID = int(os.getenv("STORAGE_CHANNEL_ID", "0"))
@@ -231,6 +230,13 @@ async def save_plague_storage():
     try:
         msg = await ch.fetch_message(plague_storage_message_id)
         await msg.edit(content="PLAGUE_DATA:" + json.dumps(plague_scheduled))
+    except:
+        pass
+
+async def remove_infected_after_delay(member: discord.Member, infected_role: discord.Role):
+    await asyncio.sleep(3 * 24 * 60 * 60)
+    try:
+        await member.remove_roles(infected_role, reason="Plague expired")
     except:
         pass
 
