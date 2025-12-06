@@ -175,7 +175,7 @@ async def init_sticky_storage():
     if not isinstance(ch, discord.TextChannel):
         return
     storage_msg = None
-    async for msg in ch.history(limit=50, oldest_first=True):
+    async for msg in ch.history(limit=None, oldest_first=False):
         if msg.author == bot.user and msg.content.startswith("STICKY_DATA:"):
             storage_msg = msg
             break
@@ -228,7 +228,7 @@ async def init_member_join_storage():
     if not isinstance(ch, discord.TextChannel):
         return
     storage_msg = None
-    async for msg in ch.history(limit=50, oldest_first=True):
+    async for msg in ch.history(limit=None, oldest_first=False):
         if msg.author == bot.user and msg.content.startswith("MEMBERJOIN_DATA:"):
             storage_msg = msg
             break
@@ -266,7 +266,7 @@ async def init_plague_storage():
     if not isinstance(ch, discord.TextChannel):
         return
     storage_msg = None
-    async for msg in ch.history(limit=50, oldest_first=True):
+    async for msg in ch.history(limit=None, oldest_first=False):
         if msg.author == bot.user and msg.content.startswith("PLAGUE_DATA:"):
             storage_msg = msg
             break
@@ -356,15 +356,15 @@ async def init_prize_storage():
     if not isinstance(ch, discord.TextChannel):
         return
     movie_msg = nitro_msg = steam_msg = None
-    async for msg in ch.history(limit=100, oldest_first=True):
+    async for msg in ch.history(limit=None, oldest_first=False):
         if msg.author != bot.user:
             continue
         content = msg.content
-        if content.startswith("PRIZE_MOVIE_DATA:"):
+        if content.startswith("PRIZE_MOVIE_DATA:") and not movie_msg:
             movie_msg = msg
-        elif content.startswith("PRIZE_NITRO_DATA:"):
+        elif content.startswith("PRIZE_NITRO_DATA:") and not nitro_msg:
             nitro_msg = msg
-        elif content.startswith("PRIZE_STEAM_DATA:"):
+        elif content.startswith("PRIZE_STEAM_DATA:") and not steam_msg:
             steam_msg = msg
         if movie_msg and nitro_msg and steam_msg:
             break
@@ -592,7 +592,7 @@ async def init_deadchat_storage():
     if not isinstance(ch, discord.TextChannel):
         return
     storage_msg = None
-    async for msg in ch.history(limit=50, oldest_first=True):
+    async for msg in ch.history(limit=None, oldest_first=False):
         if msg.author == bot.user and msg.content.startswith("DEADCHAT_DATA:"):
             storage_msg = msg
             break
@@ -638,7 +638,7 @@ async def init_deadchat_state_storage():
     if not isinstance(ch, discord.TextChannel):
         return
     storage_msg = None
-    async for msg in ch.history(limit=50, oldest_first=True):
+    async for msg in ch.history(limit=None, oldest_first=False):
         if msg.author == bot.user and msg.content.startswith("DEADCHAT_STATE:"):
             storage_msg = msg
             break
@@ -646,7 +646,7 @@ async def init_deadchat_state_storage():
         await log_to_bot_channel("DEADCHAT_STATE message missing → Run /deadchat_state_init")
         return
     deadchat_state_storage_message_id = storage_msg.id
-    await load_deadchat_state()  # load the data immediately
+    await load_deadchat_state()
 
 async def load_deadchat_state():
     global dead_current_holder_id, dead_last_win_time, dead_last_notice_message_ids
@@ -690,7 +690,6 @@ async def save_deadchat_state():
         await log_to_bot_channel(f"Deadchat state save failed: {e}")
 
 
-# Twitch state -------------------------------------------------
 async def init_twitch_state_storage():
     global twitch_state_storage_message_id
     if STORAGE_CHANNEL_ID == 0:
@@ -699,7 +698,7 @@ async def init_twitch_state_storage():
     if not isinstance(ch, discord.TextChannel):
         return
     storage_msg = None
-    async for msg in ch.history(limit=50, oldest_first=True):
+    async for msg in ch.history(limit=None, oldest_first=False):
         if msg.author == bot.user and msg.content.startswith("TWITCH_STATE:"):
             storage_msg = msg
             break
