@@ -189,6 +189,58 @@ async def log_exception(tag: str, exc: Exception):
         text = text[:1900]
     await log_to_bot_channel(text)
 
+async def check_runtime_systems():
+    problems = []
+    main_guild = bot.get_guild(DEBUG_GUILD_ID)
+    if main_guild is None and bot.guilds:
+        main_guild = bot.guilds[0]
+    if main_guild is None:
+        problems.append("Runtime: no guild found for checks")
+        return problems
+    me = main_guild.me
+    if me is None:
+        problems.append("Runtime: unable to resolve bot member in main guild")
+        return problems
+    def check_channel_permissions(channel_id: int, label: str, need_manage: bool = False):
+        if channel_id == 0:
+            return
+        channel = bot.get_channel(channel_id)
+        if channel is None:
+            problems.append(f"{label}: channel {channel_id} not found")
+            return
+        perms = channel.permissions_for(me)
+        if not perms.view_channel or not perms.send_messages:
+            problems.append(f"{label}: insufficient permissions to view/send")
+        if not perms.read_message_history:
+            problems.append(f"{label}: missing Read Message History")
+        if need_manage and not perms.manage_messages:
+            problems.append(f"{label}: missing Manage Messages")
+    check_channel_permissions(STORAGE_CHANNEL_ID, "STORAGE_CHANNEL", need_manage=True)
+    check_channel_permissions(WELCOME_CHANNEL_ID, "WELCOME_CHANNEL")
+    check_channel_permissions(BOT_LOG_CHANNEL_ID, "BOT_LOG_CHANNEL")
+    check_channel_permissions(TWITCH_ANNOUNCE_CHANNEL_ID, "TWITCH_ANNOUNCE_CHANNEL")
+    check_channel_permissions(INFECTED_ANNOUNCE_CHANNEL_ID, "INFECTED_ANNOUNCE_CHANNEL", need_manage=True)
+    for cid in DEAD_CHAT_CHANNEL_IDS:
+        check_channel_permissions(cid, f"DEAD_CHAT_CHANNEL_{cid}", need_manage=True)
+    for cid in AUTO_DELETE_CHANNEL_IDS:
+        check_channel_permissions(cid, f"AUTO_DELETE_CHANNEL_{cid}", need_manage=True)
+    roles_to_check = [
+        (BIRTHDAY_ROLE_ID, "BIRTHDAY_ROLE_ID"),
+        (MEMBER_JOIN_ROLE_ID, "MEMBER_JOIN_ROLE_ID"),
+        (BOT_JOIN_ROLE_ID, "BOT_JOIN_ROLE_ID"),
+        (DEAD_CHAT_ROLE_ID, "DEAD_CHAT_ROLE_ID"),
+        (INFECTED_ROLE_ID, "INFECTED_ROLE_ID"),
+    ]
+    for role_id, label in roles_to_check:
+        if role_id == 0:
+            continue
+        role = main_guild.get_role(role_id)
+        if role is None:
+            problems.append(f"{label}: role {role_id} not found in main guild")
+    if TWITCH_CHANNELS and (not TWITCH_CLIENT_ID or not TWITCH_CLIENT_SECRET or TWITCH_ANNOUNCE_CHANNEL_ID == 0):
+        problems.append("TWITCH_CONFIG: missing client id/secret or announce channel")
+    return problems
+
 async def run_all_inits_with_logging():
     problems = []
     try:
@@ -240,10 +292,16 @@ async def run_all_inits_with_logging():
     except Exception as e:
         problems.append("init_member_join_storage failed")
         await log_exception("init_member_join_storage", e)
+    try:
+        runtime_problems = await check_runtime_systems()
+        problems.extend(runtime_problems)
+    except Exception as e:
+        problems.append("Runtime system checks failed")
+        await log_exception("check_runtime_systems", e)
     if problems:
         summary = "Startup check: issues detected:\n" + "\n".join(problems)
     else:
-        summary = "Startup check: all storage systems loaded successfully."
+        summary = "Startup check: all storage and runtime systems passed basic checks."
     await log_to_bot_channel(summary)
 
 async def find_storage_message(prefix: str) -> discord.Message | None:
