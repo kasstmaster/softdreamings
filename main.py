@@ -187,12 +187,13 @@ async def find_storage_message(prefix: str) -> discord.Message | None:
     if not isinstance(ch, discord.TextChannel):
         await log_to_bot_channel(f"find_storage_message: storage channel invalid for {prefix}")
         return None
-    async for msg in ch.history(limit=200, oldest_first=False):
-        if msg.content.startswith(prefix) and msg.author and msg.author.bot:
-            return msg
+    for newest_first in (False, True):
+        async for msg in ch.history(limit=None, oldest_first=newest_first):
+            if msg.content.startswith(prefix):
+                return msg
     await log_to_bot_channel(f"find_storage_message: no storage message found for {prefix}")
     return None
-
+    
 async def init_sticky_storage():
     global sticky_storage_message_id
     if STORAGE_CHANNEL_ID == 0:
