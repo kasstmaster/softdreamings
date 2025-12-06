@@ -435,8 +435,8 @@ async def save_stickies():
                 entry["message_id"] = sticky_messages[cid]
             data[str(cid)] = entry
         await msg.edit(content="STICKY_DATA:" + json.dumps(data))
-    except:
-        pass
+    except Exception as e:
+        await log_exception("save_stickies", e)
 
 async def init_member_join_storage():
     global member_join_storage_message_id, pending_member_joins
@@ -463,8 +463,8 @@ async def save_member_join_storage():
     try:
         msg = await ch.fetch_message(member_join_storage_message_id)
         await msg.edit(content="MEMBERJOIN_DATA:" + json.dumps(pending_member_joins))
-    except:
-        pass
+    except Exception as e:
+        await log_exception("save_member_join_storage", e)
 
 async def init_plague_storage():
     global plague_storage_message_id, plague_scheduled, infected_members
@@ -589,8 +589,8 @@ async def save_prize_storage():
             try:
                 msg = await ch.fetch_message(msg_id)
                 await msg.edit(content=prefix + json.dumps(data))
-            except:
-                pass
+            except Exception as e:
+                await log_exception(f"save_prize_storage_{prefix}", e)
 
 def get_prize_list_and_entries(prize_type: str):
     if prize_type == "movie":
@@ -710,8 +710,8 @@ async def handle_dead_chat_message(message: discord.Message):
                     try:
                         m = await ch.fetch_message(msg_id)
                         await m.delete()
-                    except:
-                        pass
+                    except Exception as e:
+                        await log_exception("handle_dead_chat_message_clear_infected_announce", e)
     await message.author.add_roles(role, reason="Dead Chat claimed")
     dead_current_holder_id = message.author.id
     dead_last_win_time[message.author.id] = now
@@ -774,24 +774,6 @@ async def handle_dead_chat_message(message: discord.Message):
     
     dead_last_notice_message_ids[message.channel.id] = notice.id
     await save_deadchat_state()
-
-async def init_deadchat_storage():
-    global deadchat_storage_message_id, deadchat_last_times
-    msg = await find_storage_message("DEADCHAT_DATA:")
-    if not msg:
-        return
-    deadchat_storage_message_id = msg.id
-    raw = msg.content[len("DEADCHAT_DATA:"):]
-    try:
-        data = json.loads(raw or "{}")
-        deadchat_last_times.clear()
-        for cid_str, ts in data.items():
-            try:
-                deadchat_last_times[int(cid_str)] = ts
-            except:
-                pass
-    except Exception as e:
-        await log_to_bot_channel(f"init_deadchat_storage failed: {e}")
 
 async def save_deadchat_storage():
     global deadchat_storage_message_id
@@ -879,7 +861,8 @@ async def load_twitch_state():
         msg = await ch.fetch_message(twitch_state_storage_message_id)
         loaded = json.loads(msg.content[len("TWITCH_STATE:"):])
         twitch_live_state = {k.lower(): bool(v) for k, v in loaded.items()}
-    except:
+    except Exception as e:
+        await log_exception("load_twitch_state", e)
         twitch_live_state = {name: False for name in TWITCH_CHANNELS}
 
 async def save_twitch_state():
@@ -891,8 +874,8 @@ async def save_twitch_state():
     try:
         msg = await ch.fetch_message(twitch_state_storage_message_id)
         await msg.edit(content="TWITCH_STATE:" + json.dumps(twitch_live_state))
-    except:
-        pass
+    except Exception as e:
+        await log_exception("save_twitch_state", e)
 
 async def get_twitch_token():
     global twitch_access_token
@@ -945,8 +928,8 @@ class BasePrizeView(discord.ui.View):
             return await interaction.response.send_message("Server only.", ephemeral=True)
         try:
             await interaction.message.delete()
-        except:
-            pass
+        except Exception as e:
+            await log_exception("BasePrizeView_claim_button_delete", e)
         dead_role = guild.get_role(DEAD_CHAT_ROLE_ID)
         role_mention = dead_role.mention if dead_role else "the Dead Chat role"
         ch = guild.get_channel(WELCOME_CHANNEL_ID)
@@ -1186,8 +1169,8 @@ async def on_message(message: discord.Message):
                 await old_msg.delete()
             except discord.NotFound:
                 pass
-            except:
-                pass
+            except Exception as e:
+                await log_exception("on_message_sticky_delete", e)
         view = GameNotificationView()
         new_msg = await message.channel.send(sticky_texts[message.channel.id], view=view)
         sticky_messages[message.channel.id] = new_msg.id
@@ -1199,8 +1182,8 @@ async def on_message(message: discord.Message):
                 await asyncio.sleep(DELETE_DELAY_SECONDS)
                 try:
                     await message.delete()
-                except:
-                    pass
+                except Exception as e:
+                    await log_exception("auto_delete_delete_later", e)
             bot.loop.create_task(delete_later())
     await bot.process_commands(message)
 
@@ -1338,8 +1321,8 @@ async def deadchat_rescan(ctx):
                     deadchat_last_times[channel_id] = message.created_at.isoformat() + "Z"
                     count += 1
                     break
-            except:
-                pass
+            except Exception as e:
+                await log_exception("deadchat_rescan_history", e)
         await save_deadchat_storage()
     await ctx.respond(f"Rescan complete — found latest message in {count}/{len(DEAD_CHAT_CHANNEL_IDS)} dead-chat channels and saved timestamps.", ephemeral=True)
 
