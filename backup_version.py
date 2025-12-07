@@ -65,7 +65,6 @@ import traceback
 import sys
 from datetime import datetime, timedelta
 from discord import TextChannel
-from discord.ui import Select
 
 
 ############### CONSTANTS & CONFIG ###############
@@ -123,7 +122,6 @@ twitch_live_state: dict[str, bool] = {}
 twitch_state_storage_message_id: int | None = None
 
 dead_current_holder_id: int | None = None
-dead_last_notice_message_ids: dict[int, int | None] = {}
 dead_last_win_time: dict[int, datetime] = {}
 deadchat_last_times: dict[int, str] = {}
 deadchat_storage_message_id: int | None = None
@@ -559,35 +557,6 @@ async def trigger_plague_infection(member: discord.Member):
     plague_scheduled.clear()
     await save_plague_storage()
 
-async def check_plague_active():
-    if not plague_scheduled or INFECTED_ROLE_ID == 0:
-        return False
-    now = datetime.utcnow()
-    for entry in plague_scheduled:
-        start_str = entry.get("start")
-        if start_str:
-            try:
-                start = datetime.fromisoformat(start_str.replace("Z", ""))
-            except:
-                continue
-        else:
-            date_str = entry.get("date")
-            if not date_str:
-                continue
-            try:
-                start = datetime.fromisoformat(date_str + "T00:00:00")
-            except:
-                continue
-        if now >= start:
-            return True
-    return False
-
-def parse_schedule_datetime(when: str) -> datetime | None:
-    try:
-        return datetime.strptime(when, "%Y-%m-%d %H:%M")
-    except ValueError:
-        return None
-
 async def init_prize_storage():
     global movie_prize_storage_message_id, nitro_prize_storage_message_id, steam_prize_storage_message_id
     global movie_scheduled_prizes, nitro_scheduled_prizes, steam_scheduled_prizes
@@ -644,45 +613,6 @@ def get_prize_list_and_entries(prize_type: str):
     if prize_type == "steam":
         return steam_scheduled_prizes
     return None
-
-async def run_scheduled_prize(prize_type: str, prize_id: int):
-    if prize_type == "movie":
-        entries = movie_scheduled_prizes
-        view_cls = MoviePrizeView
-    elif prize_type == "nitro":
-        entries = nitro_scheduled_prizes
-        view_cls = NitroPrizeView
-    elif prize_type == "steam":
-        entries = steam_scheduled_prizes
-        view_cls = SteamPrizeView
-    else:
-        return
-    record = None
-    for p in entries:
-        if p.get("id") == prize_id:
-            record = p
-            break
-    if not record:
-        return
-    send_at = parse_schedule_datetime(record.get("send_at", ""))
-    if not send_at:
-        return
-    now = datetime.utcnow()
-    delay = (send_at - now).total_seconds()
-    if delay > 0:
-        await asyncio.sleep(delay)
-    channel_id = PRIZE_DROP_CHANNEL_ID or record.get("channel_id")
-    content = record.get("content")
-    if not channel_id or not content:
-        return
-    channel = bot.get_channel(channel_id)
-    if not channel:
-        return
-    view = view_cls()
-    await channel.send(content, view=view)
-    entries[:] = [p for p in entries if p.get("id") != prize_id]
-    await save_prize_storage()
-    await log_to_bot_channel(f"[PRIZE] Sent scheduled {prize_type} prize ID {prize_id} to channel {channel_id}.")
 
 async def add_scheduled_prize(prize_type: str, channel_id: int, content: str, date_str: str):
     if prize_type == "movie":
@@ -785,15 +715,6 @@ async def handle_dead_chat_message(message: discord.Message):
             await save_prize_storage()
             await log_to_bot_channel(f"[PRIZE] Daily prize drop(s) sent for {today_str}.")
 
-    for old_cid, mid in list(dead_last_notice_message_ids.items()):
-        if mid:
-            ch = message.guild.get_channel(old_cid)
-            if ch:
-                try:
-                    m = await ch.fetch_message(mid)
-                    await m.delete()
-                except:
-                    pass
     if triggered_plague:
         plague_text = (
             f"**PLAGUE OUTBREAK**\n"
@@ -861,7 +782,7 @@ async def init_deadchat_state_storage():
     await load_deadchat_state()
 
 async def load_deadchat_state():
-    global dead_current_holder_id, dead_last_win_time, dead_last_notice_message_ids
+    global dead_current_holder_id, dead_last_win_time
     if not deadchat_state_storage_message_id or STORAGE_CHANNEL_ID == 0:
         return
     ch = bot.get_channel(STORAGE_CHANNEL_ID)
@@ -880,7 +801,6 @@ async def load_deadchat_state():
                 dead_last_win_time[int(k)] = datetime.fromisoformat(v.replace("Z", ""))
             except:
                 pass
-        dead_last_notice_message_ids = {int(k): v for k, v in data.get("notice_msg_ids", {}).items() if v}
     except Exception as e:
         await log_to_bot_channel(f"Failed to load DEADCHAT_STATE: {e}")
 
@@ -893,7 +813,6 @@ async def save_deadchat_state():
     data = {
         "current_holder": dead_current_holder_id,
         "last_win_times": {str(k): v.isoformat() + "Z" for k, v in dead_last_win_time.items()},
-        "notice_msg_ids": dead_last_notice_message_ids
     }
     try:
         msg = await ch.fetch_message(deadchat_state_storage_message_id)
@@ -1404,7 +1323,7 @@ async def deadchat_state_init(ctx):
     ch = bot.get_channel(STORAGE_CHANNEL_ID)
     if not isinstance(ch, discord.TextChannel):
         return await ctx.respond("Invalid storage channel", ephemeral=True)
-    msg = await ch.send("DEADCHAT_STATE:{\"current_holder\":null,\"last_win_times\":{},\"notice_msg_ids\":{}}")
+    msg = await ch.send("DEADCHAT_STATE:{\"current_holder\":null,\"last_win_times\":{}}")
     global deadchat_state_storage_message_id
     deadchat_state_storage_message_id = msg.id
     await save_deadchat_state()
