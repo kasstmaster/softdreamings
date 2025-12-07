@@ -727,7 +727,6 @@ async def handle_dead_chat_message(message: discord.Message):
     await message.author.add_roles(role, reason="Dead Chat claimed")
     dead_current_holder_id = message.author.id
     dead_last_win_time[message.author.id] = now
-    await log_to_bot_channel(f"[DEADCHAT] {message.author.id} stole Dead Chat in channel {message.channel.id}.")
 
     today_str = now.strftime("%Y-%m-%d")
     hour_utc = now.hour
