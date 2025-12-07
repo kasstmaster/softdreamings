@@ -374,6 +374,10 @@ async def run_all_inits_with_logging():
     if len(text) > 1900:
         text = text[:1900]
     await log_to_bot_channel(text)
+    if problems:
+        await log_to_bot_channel(f"[STARTUP] {len(problems)} problems detected, see report above.")
+    else:
+        await log_to_bot_channel("[STARTUP] All systems passed storage + runtime checks.")
 
 async def find_storage_message(prefix: str) -> discord.Message | None:
     if STORAGE_CHANNEL_ID == 0:
@@ -417,6 +421,7 @@ async def init_sticky_storage():
                     sticky_messages[cid] = info["message_id"]
             except:
                 continue
+        await log_to_bot_channel(f"[STICKY] Loaded {len(sticky_texts)} sticky entries from storage.")
     except Exception as e:
         await log_to_bot_channel(f"Failed to load sticky data: {e}")
 
@@ -451,6 +456,7 @@ async def init_member_join_storage():
             pending_member_joins[:] = data
         else:
             pending_member_joins[:] = []
+        await log_to_bot_channel(f"[MEMBERJOIN] Loaded {len(pending_member_joins)} pending entries from storage.")
     except Exception:
         pending_member_joins[:] = []
 
@@ -487,6 +493,9 @@ async def init_plague_storage():
                     infected_members[int(mid_str)] = ts
                 except:
                     pass
+        await log_to_bot_channel(
+            f"[PLAGUE] Loaded {len(plague_scheduled)} scheduled day(s), {len(infected_members)} infected member(s) from storage."
+        )
     except Exception as e:
         await log_to_bot_channel(f"init_plague_storage failed: {e}")
 
@@ -573,6 +582,9 @@ async def init_prize_storage():
     movie_scheduled_prizes = safe_load(movie_msg.content, "PRIZE_MOVIE_DATA:")
     nitro_scheduled_prizes = safe_load(nitro_msg.content, "PRIZE_NITRO_DATA:")
     steam_scheduled_prizes = safe_load(steam_msg.content, "PRIZE_STEAM_DATA:")
+    await log_to_bot_channel(
+        f"[PRIZE] Loaded {len(movie_scheduled_prizes)} movie, {len(nitro_scheduled_prizes)} nitro, {len(steam_scheduled_prizes)} steam scheduled prizes from storage."
+    )
 
 async def save_prize_storage():
     if STORAGE_CHANNEL_ID == 0:
@@ -638,6 +650,7 @@ async def run_scheduled_prize(prize_type: str, prize_id: int):
     await channel.send(content, view=view)
     entries[:] = [p for p in entries if p.get("id") != prize_id]
     await save_prize_storage()
+    await log_to_bot_channel(f"[PRIZE] Sent scheduled {prize_type} prize ID {prize_id} to channel {channel_id}.")
 
 async def add_scheduled_prize(prize_type: str, channel_id: int, content: str, date_str: str):
     if prize_type == "movie":
@@ -715,6 +728,7 @@ async def handle_dead_chat_message(message: discord.Message):
     await message.author.add_roles(role, reason="Dead Chat claimed")
     dead_current_holder_id = message.author.id
     dead_last_win_time[message.author.id] = now
+    await log_to_bot_channel(f"[DEADCHAT] {message.author.id} stole Dead Chat in channel {message.channel.id}.")
 
     today_str = now.strftime("%Y-%m-%d")
     hour_utc = now.hour
@@ -746,6 +760,7 @@ async def handle_dead_chat_message(message: discord.Message):
             prize_list[:] = [p for p in prize_list if p.get("date") != today_str]
         if triggered_prize:
             await save_prize_storage()
+            await log_to_bot_channel(f"[PRIZE] Daily prize drop(s) sent for {today_str}.")
 
     for old_cid, mid in list(dead_last_notice_message_ids.items()):
         if mid:
@@ -764,6 +779,7 @@ async def handle_dead_chat_message(message: discord.Message):
             f"-# Those who claim Dead Chat after this moment will not be touched by the disease."
         )
         notice = await message.channel.send(plague_text)
+        await log_to_bot_channel(f"[PLAGUE] {message.author.id} infected on {today_str} in channel {message.channel.id}.")
     else:
         minutes = DEAD_CHAT_IDLE_SECONDS // 60
         notice_text = (
@@ -771,9 +787,6 @@ async def handle_dead_chat_message(message: discord.Message):
             "-# There's a random chance to win prizes with this role."
         )
         notice = await message.channel.send(notice_text)
-    
-    dead_last_notice_message_ids[message.channel.id] = notice.id
-    await save_deadchat_state()
 
 async def init_deadchat_storage():
     global deadchat_storage_message_id, deadchat_last_times
@@ -792,6 +805,7 @@ async def init_deadchat_storage():
             deadchat_last_times[int(cid_str)] = ts
         except:
             pass
+    await log_to_bot_channel(f"[DEADCHAT] Loaded timestamps for {len(deadchat_last_times)} channel(s).")
 
 async def save_deadchat_storage():
     global deadchat_storage_message_id
@@ -869,6 +883,7 @@ async def init_twitch_state_storage():
         return
     twitch_state_storage_message_id = msg.id
     await load_twitch_state()
+    await log_to_bot_channel(f"[TWITCH] State storage initialized with id {twitch_state_storage_message_id}.")
 
 async def load_twitch_state():
     global twitch_live_state
@@ -879,6 +894,7 @@ async def load_twitch_state():
         msg = await ch.fetch_message(twitch_state_storage_message_id)
         loaded = json.loads(msg.content[len("TWITCH_STATE:"):])
         twitch_live_state = {k.lower(): bool(v) for k, v in loaded.items()}
+        await log_to_bot_channel(f"[TWITCH] Loaded live state for {len(twitch_live_state)} channel(s).")
     except Exception as e:
         await log_exception("load_twitch_state", e)
         twitch_live_state = {name: False for name in TWITCH_CHANNELS}
@@ -1040,6 +1056,7 @@ async def twitch_watcher():
     ch = bot.get_channel(TWITCH_ANNOUNCE_CHANNEL_ID)
     if not ch:
         return
+    await log_to_bot_channel("[TWITCH] watcher started.")
     while not bot.is_closed():
         try:
             streams = await fetch_twitch_streams()
@@ -1052,9 +1069,11 @@ async def twitch_watcher():
                     )
                     twitch_live_state[name] = True
                     await save_twitch_state()
+                    await log_to_bot_channel(f"[TWITCH] {name} went LIVE.")
                 elif not is_live and was_live:
                     twitch_live_state[name] = False
                     await save_twitch_state()
+                    await log_to_bot_channel(f"[TWITCH] {name} went OFFLINE.")
         except Exception as e:
             await log_exception("twitch_watcher", e)
         await asyncio.sleep(60)
@@ -1063,6 +1082,7 @@ async def infected_watcher():
     await bot.wait_until_ready()
     if INFECTED_ROLE_ID == 0:
         return
+    await log_to_bot_channel("[PLAGUE] infected_watcher started.")
     while not bot.is_closed():
         try:
             now = datetime.utcnow()
@@ -1089,6 +1109,7 @@ async def infected_watcher():
                 for mid in expired_ids:
                     infected_members.pop(mid, None)
                 await save_plague_storage()
+                await log_to_bot_channel(f"[PLAGUE] Cleared infected role for: {', '.join(str(i) for i in expired_ids)}")
         except Exception as e:
             await log_exception("infected_watcher", e)
         await asyncio.sleep(3600)
@@ -1097,6 +1118,7 @@ async def member_join_watcher():
     await bot.wait_until_ready()
     if MEMBER_JOIN_ROLE_ID == 0:
         return
+    await log_to_bot_channel("[MEMBERJOIN] watcher started.")
     while not bot.is_closed():
         try:
             now = datetime.utcnow()
@@ -1125,6 +1147,7 @@ async def member_join_watcher():
                     if role not in member.roles:
                         try:
                             await member.add_roles(role, reason="Delayed member join role")
+                            await log_to_bot_channel(f"[MEMBERJOIN] Applied member role to {member.id} in guild {guild.id}.")
                         except:
                             pass
                     changed = True
@@ -1133,6 +1156,7 @@ async def member_join_watcher():
             if changed or len(remaining) != len(pending_member_joins):
                 pending_member_joins[:] = remaining
                 await save_member_join_storage()
+                await log_to_bot_channel(f"[MEMBERJOIN] Remaining pending entries: {len(pending_member_joins)}")
         except Exception as e:
             await log_exception("member_join_watcher", e)
         await asyncio.sleep(300)
@@ -1144,6 +1168,7 @@ async def on_ready():
     print(f"{bot.user} is online!")
     bot.add_view(GameNotificationView())
     await run_all_inits_with_logging()
+    await log_to_bot_channel(f"Bot ready as {bot.user} in {len(bot.guilds)} guild(s).")
     bot.loop.create_task(twitch_watcher())
     bot.loop.create_task(infected_watcher())
     bot.loop.create_task(member_join_watcher())
