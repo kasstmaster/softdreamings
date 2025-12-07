@@ -270,64 +270,64 @@ async def run_all_inits_with_logging():
         await init_sticky_storage()
         if sticky_storage_message_id is None:
             storage["STICKY"] = False
-            problems.append("STICKY_DATA storage missing; run /sticky_init")
+            problems.append("STICKY_DATA storage missing; run /sticky_init to create it.")
     except Exception as e:
         storage["STICKY"] = False
-        problems.append("init_sticky_storage failed")
+        problems.append("init_sticky_storage failed; sticky messages could not be loaded.")
         await log_exception("init_sticky_storage", e)
     try:
         await init_prize_storage()
         if movie_prize_storage_message_id is None or nitro_prize_storage_message_id is None or steam_prize_storage_message_id is None:
             storage["PRIZE"] = False
-            problems.append("PRIZE_* storage missing; run /prize_init")
+            problems.append("One or more PRIZE_* storage messages are missing; run /prize_init to create them.")
     except Exception as e:
         storage["PRIZE"] = False
-        problems.append("init_prize_storage failed")
+        problems.append("init_prize_storage failed; prize schedules could not be loaded.")
         await log_exception("init_prize_storage", e)
     try:
         await init_deadchat_storage()
         if deadchat_storage_message_id is None:
             storage["DEADCHAT"] = False
-            problems.append("DEADCHAT_DATA storage missing; run /deadchat_init")
+            problems.append("DEADCHAT_DATA storage missing; run /deadchat_init to create it.")
     except Exception as e:
         storage["DEADCHAT"] = False
-        problems.append("init_deadchat_storage failed")
+        problems.append("init_deadchat_storage failed; Dead Chat timestamps could not be loaded.")
         await log_exception("init_deadchat_storage", e)
     try:
         await init_deadchat_state_storage()
         if deadchat_state_storage_message_id is None:
             storage["DEADCHAT_STATE"] = False
-            problems.append("DEADCHAT_STATE storage missing; run /deadchat_state_init")
+            problems.append("DEADCHAT_STATE storage missing; run /deadchat_state_init to create it.")
     except Exception as e:
         storage["DEADCHAT_STATE"] = False
-        problems.append("init_deadchat_state_storage failed")
+        problems.append("init_deadchat_state_storage failed; Dead Chat state could not be loaded.")
         await log_exception("init_deadchat_state_storage", e)
     try:
         await init_twitch_state_storage()
         if twitch_state_storage_message_id is None:
             storage["TWITCH_STATE"] = False
-            problems.append("TWITCH_STATE storage missing; run /twitch_state_init")
+            problems.append("TWITCH_STATE storage missing; run /twitch_state_init to create it.")
     except Exception as e:
         storage["TWITCH_STATE"] = False
-        problems.append("init_twitch_state_storage failed")
+        problems.append("init_twitch_state_storage failed; Twitch live state could not be loaded.")
         await log_exception("init_twitch_state_storage", e)
     try:
         await init_plague_storage()
         if plague_storage_message_id is None:
             storage["PLAGUE"] = False
-            problems.append("PLAGUE_DATA storage missing; run /plague_init")
+            problems.append("PLAGUE_DATA storage missing; run /plague_init to create it.")
     except Exception as e:
         storage["PLAGUE"] = False
-        problems.append("init_plague_storage failed")
+        problems.append("init_plague_storage failed; plague schedule and infected list could not be loaded.")
         await log_exception("init_plague_storage", e)
     try:
         await init_member_join_storage()
         if member_join_storage_message_id is None:
             storage["MEMBERJOIN"] = False
-            problems.append("MEMBERJOIN_DATA storage missing; run /memberjoin_init")
+            problems.append("MEMBERJOIN_DATA storage missing; run /memberjoin_init to create it.")
     except Exception as e:
         storage["MEMBERJOIN"] = False
-        problems.append("init_member_join_storage failed")
+        problems.append("init_member_join_storage failed; pending member joins could not be loaded.")
         await log_exception("init_member_join_storage", e)
     try:
         runtime_problems, runtime_results = await check_runtime_systems()
@@ -340,35 +340,70 @@ async def run_all_inits_with_logging():
             "DEAD_CHAT_CHANNELS": False,
             "TWITCH_CONFIG": False,
         }
-        problems.append("Runtime system checks failed")
+        problems.append("Runtime system checks failed; see logs for details.")
         await log_exception("check_runtime_systems", e)
-    def mark(ok: bool, text: str) -> str:
-        return f"{'✅' if ok else '🚩'} {text}"
     lines = []
     lines.append("Startup check report:")
     lines.append("")
     lines.append("[STORAGE]")
-    lines.append(mark(storage["STICKY"], "Sticky storage"))
-    lines.append(mark(storage["DEADCHAT"], "Dead Chat storage"))
-    lines.append(mark(storage["DEADCHAT_STATE"], "Dead Chat state"))
-    lines.append(mark(storage["PLAGUE"], "Plague storage"))
-    lines.append(mark(storage["PRIZE"], "Prize storage (movie/nitro/steam)"))
-    lines.append(mark(storage["MEMBERJOIN"], "Member-join storage"))
-    lines.append(mark(storage["TWITCH_STATE"], "Twitch state storage"))
+    if storage["STICKY"]:
+        lines.append("✅ Sticky storage")
+    else:
+        lines.append("⚠️ **Sticky storage** — STICKY_DATA storage message is missing or unreadable, so sticky messages cannot be loaded or saved.")
+    if storage["DEADCHAT"]:
+        lines.append("✅ Dead Chat storage")
+    else:
+        lines.append("⚠️ **Dead Chat storage** — DEADCHAT_DATA storage message is missing or unreadable, so Dead Chat idle timestamps cannot be persisted.")
+    if storage["DEADCHAT_STATE"]:
+        lines.append("✅ Dead Chat state")
+    else:
+        lines.append("⚠️ **Dead Chat state** — DEADCHAT_STATE storage message is missing or unreadable, so current holder and state cannot be persisted.")
+    if storage["PLAGUE"]:
+        lines.append("✅ Plague storage")
+    else:
+        lines.append("⚠️ **Plague storage** — PLAGUE_DATA storage message is missing or unreadable, so plague schedule and infected members cannot be persisted.")
+    if storage["PRIZE"]:
+        lines.append("✅ Prize storage (movie/nitro/steam)")
+    else:
+        lines.append("⚠️ **Prize storage** — One or more PRIZE_* storage messages are missing or unreadable, so scheduled prizes cannot be persisted.")
+    if storage["MEMBERJOIN"]:
+        lines.append("✅ Member-join storage")
+    else:
+        lines.append("⚠️ **Member-join storage** — MEMBERJOIN_DATA storage message is missing or unreadable, so delayed member roles cannot be persisted.")
+    if storage["TWITCH_STATE"]:
+        lines.append("✅ Twitch state storage")
+    else:
+        lines.append("⚠️ **Twitch state storage** — TWITCH_STATE storage message is missing or unreadable, so Twitch live/offline state cannot be persisted.")
     lines.append("")
     lines.append("[RUNTIME CONFIG]")
-    lines.append(mark(runtime_results.get("CHANNELS", False), "Channels and basic permissions"))
-    lines.append(mark(runtime_results.get("ROLES", False), "Required roles present"))
-    lines.append(mark(runtime_results.get("DEAD_CHAT_CHANNELS", False), "Dead Chat channels ready"))
-    lines.append(mark(runtime_results.get("AUTO_DELETE", False), "Auto-delete channels ready"))
-    lines.append(mark(runtime_results.get("TWITCH_CONFIG", False), "Twitch config and announce channel"))
-    lines.append("")
-    if problems:
-        lines.append("Details:")
-        for p in problems:
-            lines.append(f"🚩 {p}")
+    if runtime_results.get("CHANNELS", False):
+        lines.append("✅ Channels and basic permissions")
     else:
-        lines.append("All systems passed basic storage + runtime checks.")
+        lines.append("⚠️ **Channels and basic permissions** — One or more required channels are missing or the bot lacks view, send, history, or manage permissions for them.")
+    if runtime_results.get("ROLES", False):
+        lines.append("✅ Required roles present")
+    else:
+        lines.append("⚠️ **Required roles present** — One or more required roles are missing from the main guild, so some automations cannot run.")
+    if runtime_results.get("DEAD_CHAT_CHANNELS", False):
+        lines.append("✅ Dead Chat channels ready")
+    else:
+        lines.append("⚠️ **Dead Chat channels ready** — One or more Dead Chat channels are missing or have insufficient permissions for idle tracking and role steals.")
+    if runtime_results.get("AUTO_DELETE", False):
+        lines.append("✅ Auto-delete channels ready")
+    else:
+        lines.append("⚠️ **Auto-delete channels ready** — One or more auto-delete channels are missing or lack message management permissions.")
+    if runtime_results.get("TWITCH_CONFIG", False):
+        lines.append("✅ Twitch config and announce channel")
+    else:
+        lines.append("⚠️ **Twitch config and announce channel** — Twitch client ID/secret or announce channel is misconfigured, so live notifications cannot be sent.")
+    if problems:
+        lines.append("")
+        lines.append("[DETAILS]")
+        for p in problems:
+            lines.append(f"⚠️ **Detail** — {p}")
+    else:
+        lines.append("")
+        lines.append("All systems passed basic storage and runtime checks.")
     text = "\n".join(lines)
     if len(text) > 1900:
         text = text[:1900]
@@ -376,7 +411,7 @@ async def run_all_inits_with_logging():
     if problems:
         await log_to_bot_channel(f"[STARTUP] {len(problems)} problems detected, see report above.")
     else:
-        await log_to_bot_channel("[STARTUP] All systems passed storage + runtime checks.")
+        await log_to_bot_channel("[STARTUP] All systems passed storage and runtime checks.")
 
 async def find_storage_message(prefix: str) -> discord.Message | None:
     if STORAGE_CHANNEL_ID == 0:
