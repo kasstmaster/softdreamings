@@ -110,6 +110,7 @@ INFECTED_ANNOUNCE_CHANNEL_ID = int(os.getenv("INFECTED_ANNOUNCE_CHANNEL_ID", "0"
 
 STORAGE_CHANNEL_ID = int(os.getenv("STORAGE_CHANNEL_ID", "0"))
 
+PRIZE_DROP_CHANNEL_ID = int(os.getenv("PRIZE_DROP_CHANNEL_ID", "0"))
 PRIZE_EMOJI = os.getenv("PRIZE_EMOJI", "")
 _raw_prize_defs = os.getenv("PRIZE_DEFS", "")
 if _raw_prize_defs:
@@ -673,7 +674,7 @@ async def run_scheduled_prize(prize_type: str, prize_id: int):
     delay = (send_at - now).total_seconds()
     if delay > 0:
         await asyncio.sleep(delay)
-    channel_id = record.get("channel_id")
+    channel_id = PRIZE_DROP_CHANNEL_ID or record.get("channel_id")
     content = record.get("content")
     if not channel_id or not content:
         return
@@ -697,10 +698,11 @@ async def add_scheduled_prize(prize_type: str, channel_id: int, content: str, da
         return
     existing_ids = [p.get("id", 0) for p in entries]
     new_id = max(existing_ids) + 1 if existing_ids else 1
+    target_channel_id = PRIZE_DROP_CHANNEL_ID or channel_id
     entries.append(
         {
             "id": new_id,
-            "channel_id": channel_id,
+            "channel_id": target_channel_id,
             "content": content,
             "date": date_str,
         }
@@ -784,7 +786,7 @@ async def handle_dead_chat_message(message: discord.Message):
             if matching:
                 triggered_prize = True
             for p in matching:
-                channel_id = p.get("channel_id") or message.channel.id
+                channel_id = PRIZE_DROP_CHANNEL_ID or p.get("channel_id") or message.channel.id
                 channel = message.guild.get_channel(channel_id)
                 if not channel:
                     channel = message.channel
@@ -1563,6 +1565,10 @@ async def prize_movie(
         return await ctx.respond("Admin only.", ephemeral=True)
     content = "**YOU'VE FOUND A PRIZE!**\nPrize: *Movie Request*\nDrop Rate: *Common*"
     if month is None and day is None:
+        drop_ch = bot.get_channel(PRIZE_DROP_CHANNEL_ID) or ctx.channel
+        if isinstance(drop_ch, discord.TextChannel):
+            await drop_ch.send(content, view=MoviePrizeView())
+            return await ctx.respond(f"Prize drop sent in {drop_ch.mention}.", ephemeral=True)
         return await ctx.respond(content, view=MoviePrizeView())
     if month is None or day is None:
         return await ctx.respond("Provide month and day, or leave both blank.", ephemeral=True)
@@ -1593,6 +1599,10 @@ async def prize_nitro(
         return await ctx.respond("Admin only.", ephemeral=True)
     content = "**YOU'VE FOUND A PRIZE!**\nPrize: *Month of Nitro Basic*\nDrop Rate: *Uncommon*"
     if month is None and day is None:
+        drop_ch = bot.get_channel(PRIZE_DROP_CHANNEL_ID) or ctx.channel
+        if isinstance(drop_ch, discord.TextChannel):
+            await drop_ch.send(content, view=NitroPrizeView())
+            return await ctx.respond(f"Prize drop sent in {drop_ch.mention}.", ephemeral=True)
         return await ctx.respond(content, view=NitroPrizeView())
     if month is None or day is None:
         return await ctx.respond("Provide month and day, or leave both blank.", ephemeral=True)
@@ -1623,6 +1633,10 @@ async def prize_steam(
         return await ctx.respond("Admin only.", ephemeral=True)
     content = "**YOU'VE FOUND A PRIZE!**\nPrize: *Steam Gift Card*\nDrop Rate: *Rare*"
     if month is None and day is None:
+        drop_ch = bot.get_channel(PRIZE_DROP_CHANNEL_ID) or ctx.channel
+        if isinstance(drop_ch, discord.TextChannel):
+            await drop_ch.send(content, view=SteamPrizeView())
+            return await ctx.respond(f"Prize drop sent in {drop_ch.mention}.", ephemeral=True)
         return await ctx.respond(content, view=SteamPrizeView())
     if month is None or day is None:
         return await ctx.respond("Provide month and day, or leave both blank.", ephemeral=True)
