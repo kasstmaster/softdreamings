@@ -94,7 +94,7 @@ TWITCH_ANNOUNCE_CHANNEL_ID = int(os.getenv("TWITCH_ANNOUNCE_CHANNEL_ID"))
 TWITCH_EMOJI = os.getenv("TWITCH_EMOJI")
 
 MOD_LOG_THREAD_ID = int(os.getenv("MOD_LOG_THREAD_ID"))
-BOT_LOG_CHANNEL_ID = int(os.getenv("BOT_LOG_CHANNEL_ID", "0"))
+BOT_LOG_THREAD_ID = int(os.getenv("BOT_LOG_THREAD_ID", "0"))
 
 DEAD_CHAT_ROLE_ID = int(os.getenv("DEAD_CHAT_ROLE_ID", "0"))
 DEAD_CHAT_CHANNEL_IDS = [int(x.strip()) for x in os.getenv("DEAD_CHAT_CHANNEL_IDS", "").split(",") if x.strip().isdigit()]
@@ -171,9 +171,9 @@ async def log_to_thread(content: str):
         pass
 
 async def log_to_bot_channel(content: str):
-    if BOT_LOG_CHANNEL_ID == 0:
+    if BOT_LOG_THREAD_ID == 0:
         return await log_to_thread(f"[BOT] {content}")
-    channel = bot.get_channel(BOT_LOG_CHANNEL_ID)
+    channel = bot.get_channel(BOT_LOG_THREAD_ID)
     if not channel:
         return
     try:
@@ -231,7 +231,7 @@ async def check_runtime_systems():
             fail(key, f"{label}: missing Manage Messages")
     check_channel_permissions(STORAGE_CHANNEL_ID, "STORAGE_CHANNEL", "CHANNELS", need_manage=True)
     check_channel_permissions(WELCOME_CHANNEL_ID, "WELCOME_CHANNEL", "CHANNELS")
-    check_channel_permissions(BOT_LOG_CHANNEL_ID, "BOT_LOG_CHANNEL", "CHANNELS")
+    check_channel_permissions(BOT_LOG_THREAD_ID, "BOT_LOG_CHANNEL", "CHANNELS")
     check_channel_permissions(TWITCH_ANNOUNCE_CHANNEL_ID, "TWITCH_ANNOUNCE_CHANNEL", "CHANNELS")
     check_channel_permissions(INFECTED_ANNOUNCE_CHANNEL_ID, "INFECTED_ANNOUNCE_CHANNEL", "CHANNELS", need_manage=True)
     for cid in DEAD_CHAT_CHANNEL_IDS:
