@@ -809,7 +809,8 @@ async def handle_dead_chat_message(message: discord.Message):
             f"**PLAGUE OUTBREAK**\n"
             f"-# The sickness has chosen its host.\n"
             f"-# {message.author.mention} bears the infection, binding the plague and ending today’s contagion.\n"
-            f"-# Those who claim Dead Chat after this moment will not be touched by the disease."
+            f"-# Those who claim Dead Chat after this moment will not be touched by the disease.\n"
+            f"-# [Learn More](https://discord.com/channels/1205041211610501120/1447330327923265586)"
         )
         notice = await message.channel.send(plague_text)
         await log_to_bot_channel(f"[PLAGUE] {message.author.id} infected on {today_str} in channel {message.channel.id}.")
@@ -817,7 +818,8 @@ async def handle_dead_chat_message(message: discord.Message):
         minutes = DEAD_CHAT_IDLE_SECONDS // 60
         notice_text = (
             f"{message.author.mention} has stolen the {role.mention} role after {minutes}+ minutes of silence.\n"
-            "-# There's a random chance to win prizes with this role."
+            f"-# There's a random chance to win prizes with this role.\n"
+            f"-# [Learn More](https://discord.com/channels/1205041211610501120/1447330327923265586)"
         )
         notice = await message.channel.send(notice_text)
 
