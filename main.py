@@ -106,7 +106,6 @@ MONTH_TO_NUM = {name: i for i, name in enumerate(MONTH_CHOICES, start=1)}
 
 PRIZE_PLAGUE_TRIGGER_HOUR_UTC = int(os.getenv("PRIZE_PLAGUE_TRIGGER_HOUR_UTC", "12"))
 INFECTED_ROLE_ID = int(os.getenv("INFECTED_ROLE_ID", "0"))
-INFECTED_ANNOUNCE_CHANNEL_ID = int(os.getenv("INFECTED_ANNOUNCE_CHANNEL_ID", "0"))
 
 STORAGE_CHANNEL_ID = int(os.getenv("STORAGE_CHANNEL_ID", "0"))
 
@@ -146,7 +145,6 @@ member_join_storage_message_id: int | None = None
 plague_scheduled: list[dict] = []
 plague_storage_message_id: int | None = None
 infected_members: dict[int, str] = {}
-infected_announce_messages: dict[int, int] = {}
 
 
 ############### HELPER FUNCTIONS ###############
@@ -234,7 +232,6 @@ async def check_runtime_systems():
     check_channel_permissions(WELCOME_CHANNEL_ID, "WELCOME_CHANNEL", "CHANNELS")
     check_channel_permissions(BOT_LOG_THREAD_ID, "BOT_LOG_CHANNEL", "CHANNELS")
     check_channel_permissions(TWITCH_ANNOUNCE_CHANNEL_ID, "TWITCH_ANNOUNCE_CHANNEL", "CHANNELS")
-    check_channel_permissions(INFECTED_ANNOUNCE_CHANNEL_ID, "INFECTED_ANNOUNCE_CHANNEL", "CHANNELS", need_manage=True)
     for cid in DEAD_CHAT_CHANNEL_IDS:
         check_channel_permissions(cid, f"DEAD_CHAT_CHANNEL_{cid}", "DEAD_CHAT_CHANNELS", need_manage=True)
     for cid in AUTO_DELETE_CHANNEL_IDS:
@@ -752,15 +749,6 @@ async def handle_dead_chat_message(message: discord.Message):
     for member in list(role.members):
         if member.id != message.author.id:
             await member.remove_roles(role, reason="Dead Chat stolen")
-            msg_id = infected_announce_messages.pop(member.id, None)
-            if msg_id and INFECTED_ANNOUNCE_CHANNEL_ID != 0:
-                ch = message.guild.get_channel(INFECTED_ANNOUNCE_CHANNEL_ID)
-                if isinstance(ch, discord.TextChannel):
-                    try:
-                        m = await ch.fetch_message(msg_id)
-                        await m.delete()
-                    except Exception as e:
-                        await log_exception("handle_dead_chat_message_clear_infected_announce", e)
     await message.author.add_roles(role, reason="Dead Chat claimed")
     dead_current_holder_id = message.author.id
     dead_last_win_time[message.author.id] = now
