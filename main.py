@@ -1623,7 +1623,7 @@ async def activity_add(
     if not ctx.author.guild_permissions.administrator:
         return await ctx.respond("Admin only.", ephemeral=True)
     await touch_member_activity(member)
-    await ctx.respond(f"{member.mention} marked active and given the active role (if configured).", ephemeral=True)
+    await ctx.respond(f"{member.mention} marked active and given the active role.", ephemeral=True)
 
 @bot.slash_command(name="prize_list", description="List scheduled prizes")
 async def prize_list(
