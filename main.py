@@ -1255,7 +1255,7 @@ async def activity_inactive_watcher():
     await log_to_bot_channel("[ACTIVITY] activity_inactive_watcher started.")
     while not bot.is_closed():
         try:
-            now = datetime.utcnow()
+            now = discord.utils.utcnow()
             cutoff = now - timedelta(days=INACTIVE_DAYS_THRESHOLD)
             inactive_ids = set()
             for mid, ts in list(last_activity.items()):
