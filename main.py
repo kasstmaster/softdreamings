@@ -97,7 +97,7 @@ MOD_LOG_THREAD_ID = int(os.getenv("MOD_LOG_THREAD_ID"))
 BOT_LOG_THREAD_ID = int(os.getenv("BOT_LOG_THREAD_ID", "0"))
 
 ACTIVE_ROLE_ID = int(os.getenv("ACTIVE_ROLE_ID", "0"))
-INACTIVE_DAYS_THRESHOLD = int(os.getenv("INACTIVE_DAYS_THRESHOLD", "30"))
+INACTIVE_DAYS_THRESHOLD = int(os.getenv("INACTIVE_DAYS_THRESHOLD", "14"))
 
 DEAD_CHAT_ROLE_ID = int(os.getenv("DEAD_CHAT_ROLE_ID", "0"))
 DEAD_CHAT_CHANNEL_IDS = [int(x.strip()) for x in os.getenv("DEAD_CHAT_CHANNEL_IDS", "").split(",") if x.strip().isdigit()]
