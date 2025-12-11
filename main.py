@@ -392,9 +392,6 @@ async def run_all_inits_with_logging():
         }
         problems.append("Runtime system checks failed; see logs for details.")
         await log_exception("check_runtime_systems", e)
-    lines = []
-    lines.append("Startup check report:")
-    lines.append("")
     lines.append("[STORAGE]")
     if storage["STICKY"]:
         lines.append("`✅` Sticky storage")
