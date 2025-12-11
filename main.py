@@ -1195,7 +1195,6 @@ async def twitch_watcher():
     ch = bot.get_channel(TWITCH_ANNOUNCE_CHANNEL_ID)
     if not ch:
         return
-    await log_to_bot_channel("[TWITCH] watcher started.")
     while not bot.is_closed():
         try:
             streams = await fetch_twitch_streams()
@@ -1221,7 +1220,6 @@ async def infected_watcher():
     await bot.wait_until_ready()
     if INFECTED_ROLE_ID == 0:
         return
-    await log_to_bot_channel("[PLAGUE] infected_watcher started.")
     while not bot.is_closed():
         try:
             now = datetime.utcnow()
@@ -1264,7 +1262,6 @@ async def member_join_watcher():
     await bot.wait_until_ready()
     if MEMBER_JOIN_ROLE_ID == 0:
         return
-    await log_to_bot_channel("[MEMBERJOIN] watcher started.")
     while not bot.is_closed():
         try:
             now = datetime.utcnow()
@@ -1314,7 +1311,6 @@ async def activity_inactive_watcher():
     await bot.wait_until_ready()
     if ACTIVE_ROLE_ID == 0:
         return
-    await log_to_bot_channel("[ACTIVITY] activity_inactive_watcher started.")
     while not bot.is_closed():
         try:
             now = discord.utils.utcnow()
@@ -1349,16 +1345,28 @@ async def on_ready():
     print(f"{bot.user} is online!")
     bot.add_view(GameNotificationView())
     await run_all_inits_with_logging()
+
     global startup_logging_done, startup_log_buffer
+
     await init_last_activity_storage()
+
     bot.loop.create_task(twitch_watcher())
     bot.loop.create_task(infected_watcher())
     bot.loop.create_task(member_join_watcher())
     bot.loop.create_task(activity_inactive_watcher())
+
+    await log_to_bot_channel("[TWITCH] watcher started.")
+    await log_to_bot_channel("[PLAGUE] infected_watcher started.")
+    await log_to_bot_channel("[MEMBERJOIN] watcher started.")
+    await log_to_bot_channel("[ACTIVITY] activity_inactive_watcher started.")
+
     await log_to_bot_channel(f"Bot ready as {bot.user} in {len(bot.guilds)} guild(s).")
+
     await flush_startup_logs()
+
     startup_logging_done = True
     startup_log_buffer = []
+
     if sticky_storage_message_id is None:
         print("STORAGE NOT INITIALIZED — Run /sticky_init, /prize_init and /deadchat_init")
     else:
