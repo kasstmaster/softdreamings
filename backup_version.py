@@ -203,30 +203,53 @@ async def flush_startup_logs():
         return
     early = []
     watcher_lines = []
-    report_entries = []
     startup_summaries = []
     ready_lines = []
+    activity_loaded_lines = []
+    report_entry = None
     for entry in startup_log_buffer:
-        if "Startup check report:" in entry:
-            report_entries.append(entry)
+        if "[STORAGE]" in entry and "[RUNTIME CONFIG]" in entry:
+            report_entry = entry
         elif entry.startswith("[TWITCH] watcher started") or entry.startswith("[PLAGUE] infected_watcher started") or entry.startswith("[MEMBERJOIN] watcher started") or entry.startswith("[ACTIVITY] activity_inactive_watcher started"):
             watcher_lines.append(entry)
         elif entry.startswith("[STARTUP] "):
             startup_summaries.append(entry)
+        elif entry.startswith("[ACTIVITY] Loaded last activity"):
+            activity_loaded_lines.append(entry)
         elif entry.startswith("Bot ready as "):
             ready_lines.append(entry)
         else:
             early.append(entry)
-    parts = ["---------------------------- STARTUP LOGS ----------------------------"]
+    parts = ["---------------------------- STARTUP LOGS ----------------------------",
+    ""]
     parts.extend(early)
+    basic_line = None
+    if report_entry:
+        lines = report_entry.split("\n")
+        trimmed = [l.rstrip() for l in lines]
+        idx = len(trimmed) - 1
+        while idx >= 0 and trimmed[idx] == "":
+            idx -= 1
+        if idx >= 0 and trimmed[idx] == "All systems passed basic storage and runtime checks.":
+            basic_line = trimmed[idx]
+            trimmed = trimmed[:idx]
+            while trimmed and trimmed[-1] == "":
+                trimmed.pop()
+        if trimmed:
+            parts.extend(trimmed)
     if watcher_lines:
         parts.append("")
         parts.extend(watcher_lines)
-    if report_entries:
+    tail_present = startup_summaries or activity_loaded_lines or basic_line or ready_lines
+    if tail_present:
         parts.append("")
-        parts.extend(report_entries)
-    parts.extend(startup_summaries)
-    parts.extend(ready_lines)
+        parts.extend(startup_summaries)
+        parts.extend(activity_loaded_lines)
+        if basic_line or ready_lines:
+            parts.append("")
+        if basic_line:
+            parts.append(basic_line)
+        parts.extend(ready_lines)
     text = "\n".join(parts)
     if len(text) > 1900:
         text = text[:1900]
