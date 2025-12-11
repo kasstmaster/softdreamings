@@ -810,6 +810,15 @@ async def handle_dead_chat_message(message: discord.Message):
                     await m.delete()
                 except:
                     pass
+
+    if triggered_plague:
+        plague_text = (
+            f"**PLAGUE OUTBREAK**\n"
+            f"-# The sickness has chosen its host.\n"
+            f"-# {message.author.mention} bears the infection, binding the plague and ending today’s contagion.\n"
+            f"-# Those who claim Dead Chat after this moment will not be touched by the disease.\n"
+            f"-# [Learn More](https://discord.com/channels/1205041211610501120/1447330327923265586)"
+        )
         notice = await message.channel.send(plague_text)
         await log_to_bot_channel(
             f"[PLAGUE] {message.author.mention} infected on {today_str} in {message.channel.mention}."
@@ -822,6 +831,9 @@ async def handle_dead_chat_message(message: discord.Message):
             f"-# [Learn More](https://discord.com/channels/1205041211610501120/1447330327923265586)"
         )
         notice = await message.channel.send(notice_text)
+
+    dead_last_notice_message_ids[message.channel.id] = notice.id
+    await save_deadchat_state()
 
 async def init_deadchat_storage():
     global deadchat_storage_message_id, deadchat_last_times
@@ -1201,7 +1213,9 @@ async def infected_watcher():
                 if cleared_mentions:
                     await log_to_bot_channel(f"[PLAGUE] Cleared infected role for: {', '.join(cleared_mentions)}")
                 else:
-                    await log_to_bot_channel(f"[PLAGUE] Cleared infected role for: {', '.join(str(i) for i in expired_ids)}")
+                    await log_to_bot_channel(
+                        f"[PLAGUE] Cleared infected role for: {', '.join(f'<@{i}>' for i in expired_ids)}"
+                    )
         except Exception as e:
             await log_exception("infected_watcher", e)
         await asyncio.sleep(3600)
