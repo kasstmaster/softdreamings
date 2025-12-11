@@ -1311,12 +1311,12 @@ async def on_ready():
     if len(all_text) > 1900:
         all_text = all_text[:1900]
 
-    channel = bot.get_channel(BOT_LOG_THREAD_ID)
-    if channel:
-        await channel.send("---------------------------- STARTUP LOGS ----------------------------\n" + all_text)
-
     startup_logging_done = True
     startup_log_buffer = []
+
+    await log_to_bot_channel(
+        "---------------------------- STARTUP LOGS ----------------------------\n" + all_text
+    )
 
     if sticky_storage_message_id is None:
         print("STORAGE NOT INITIALIZED — Run /sticky_init, /prize_init and /deadchat_init")
