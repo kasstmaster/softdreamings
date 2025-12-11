@@ -9,7 +9,7 @@ BOT_JOIN_ROLE_ID to bots on join.
 
 MEMBER_JOIN_ROLE_ID to members after a 1-day delay (tracked with persistent storage + background watcher).
 
-Logs joins, leaves, kicks, bans in mod/bot logs.
+Logs leaves, kicks, bans, and bot joins.
 
 Birthday & Server Boost Announcements
 
@@ -65,9 +65,7 @@ Deletes previous win announcements.
 
 Notes plague events or prize drops.
 
-Daily Auto-Reset
-
-There is no daily auto-reset; the Dead Chat role only changes hands on qualifying Dead Chat events.
+There is **no** daily auto-reset; the Dead Chat role only changes hands on qualifying Dead Chat events.
 
 Persistent Storage
 
@@ -84,7 +82,7 @@ Has `/deadchat_init`, `/deadchat_state_init`, `/deadchat_rescan` to initialize o
 
 # 4. Dead Chat Plague System
 
-Monthly “contagious day” mechanic.
+Single scheduled “contagious day” mechanic.
 
 Features
 
@@ -102,7 +100,7 @@ Storage
 
 `Saves:`
 
-- the currently scheduled plague date (date string)  
+- the scheduled plague date (date string)  
 - infected members + expiry timestamps  
 
 ---
@@ -123,9 +121,9 @@ Features
 
 `Fully automated:`
 
-- On any day, after `PRIZE_PLAGUE_TRIGGER_HOUR_UTC` (12:00 UTC), the first qualifying Dead Chat event for that date drops all prizes scheduled for that date into their configured channels.
-- Scheduled entries for that date are removed after they fire so they only trigger once.
-- Each prize uses a persistent interactive button to claim prize.
+- On any day, after `PRIZE_PLAGUE_TRIGGER_HOUR_UTC` (12:00 UTC), the first qualifying Dead Chat event for that date drops all scheduled prizes for that date.
+- Scheduled entries are removed after they fire.
+- Each prize uses a persistent interactive button to claim the prize.
 - Sends an announcement to the welcome channel when claimed.
 
 ---
@@ -181,13 +179,10 @@ Clicking Get Notified opens a dropdown.
 
 `User selects roles for:`
 
-General games
-
-Among Us Vanilla
-
-Among Us Modded
-
-Among Us Proximity Chat
+General games  
+Among Us Vanilla  
+Among Us Modded  
+Among Us Proximity Chat  
 
 Automatically adds/removes roles.
 
@@ -209,27 +204,18 @@ Birthday messages are exempt (detected via keywords).
 
 `Two destinations:`
 
-MOD_LOG_THREAD_ID
-
-BOT_LOG_CHANNEL_ID
+MOD_LOG_THREAD_ID  
+BOT_LOG_THREAD_ID
 
 `Bot logs:`
 
-bans
-
-kicks
-
-user departures
-
-bot joins
-
-plague events
-
-plague events
-
-dead chat errors
-
-storage issues
+bans  
+kicks  
+user departures  
+bot joins  
+plague events  
+dead chat errors  
+storage issues  
 
 ---
 
@@ -239,35 +225,26 @@ Stored inside a hidden storage channel (STORAGE_CHANNEL_ID).
 
 `Subsystems that store persistent JSON:`
 
-Sticky messages
-
-Member join pending queue
-
-Deadchat timestamps
-
-Deadchat state
-
-Twitch state
-
-Prize schedules (Movie/Nitro/Steam)
-
-Plague data
+Sticky messages  
+Member join pending queue  
+Deadchat timestamps  
+Deadchat state  
+Twitch state  
+Prize schedules (Movie/Nitro/Steam)  
+Plague data  
 
 Admin commands create the missing storage messages.
 
 ---
 
 # 12. Admin Utility Commands
-/say
-
+/say  
 Bot says a message.
 
-/editbotmsg
-
+/editbotmsg  
 Edit any bot message with 4 lines of content.
 
-/birthday_announce
-
+/birthday_announce  
 Manual birthday message.
 
 ---
@@ -276,30 +253,22 @@ Manual birthday message.
 
 `Running continuously:`
 
-twitch_watcher: checks live status every 60s
+twitch_watcher: checks live status every 60s  
+infected_watcher: clears expiring infections  
+member_join_watcher: applies delayed join roles  
+activity_inactive_watcher: removes inactive active members  
 
-infected_watcher: clears expiring infections
-
-member_join_watcher: applies delayed join roles
-
-activity_inactive_watcher: removes inactive active members
-
-scheduled prize runners: one loop per scheduled prize
+(No scheduled prize runners — prizes are triggered by Dead Chat events, not time-based loops.)
 
 ---
 
 # 14. Views & Buttons
-BasePrizeView
-
-MoviePrizeView
-
-NitroPrizeView
-
-SteamPrizeView
-
-GameNotificationView
-
-GameNotificationSelect
+BasePrizeView  
+MoviePrizeView  
+NitroPrizeView  
+SteamPrizeView  
+GameNotificationView  
+GameNotificationSelect  
 
 All are persistent (timeout=None or registered on_ready).
 
@@ -307,66 +276,60 @@ All are persistent (timeout=None or registered on_ready).
 
 # 15. Stealth Features & Edge-Case Handling
 
-Prevents bot messages from triggering dead chat.
-
-Prevents awarding infected role twice.
-
-Avoids double Twitch notifications.
-
-Catches missing storage and instructs admins how to repair.
-
+Prevents bot messages from triggering dead chat.  
+Prevents awarding infected role twice.  
+Avoids double Twitch notifications.  
+Catches missing storage and instructs admins how to repair.  
 Cleans old Dead Chat announcement messages when a new one fires.
 
 # COMPLETE FEATURE SUMMARY
 
-Welcome system
+Welcome system  
 
-Boost announcements
+Boost announcements  
 
-Birthday announcements
+Birthday announcements  
 
-Delayed role assignment for new members
+Delayed role assignment for new members  
 
-Bot-join role assignment
+Bot-join role assignment  
 
-Kick/ban/leave logging
+Kick/ban/leave logging  
 
-Active member tracking system
+Active member tracking system  
 
-Dead Chat role system with steal mechanic
+Dead Chat role system with steal mechanic  
 
-Idle detection per channel
+Idle detection per channel  
 
-Dead Chat daily auto-reset
+Dead Chat cooldown system  
 
-Dead Chat cooldown system
+Dead Chat win announcements  
 
-Dead Chat win announcements
+Dead Chat plague system (one scheduled infection window; first qualifying Dead Chat steal after trigger hour becomes infected)  
 
-Dead Chat plague system (one scheduled infection window; first Dead Chat steal after start gets infected)
+Infection role & expiration  
 
-Infection role & expiration
+Prize drop system (Movie / Nitro / Steam)  
 
-Prize drop system (Movie / Nitro / Steam)
+Scheduled prize system (date-based, triggered by Dead Chat)  
 
-Scheduled prize system with background tasks
+Prize claim UI  
 
-Prize claim UI
+Twitch live tracking and announcements  
 
-Twitch live tracking and announcements
+Twitch OAuth token refresh  
 
-Twitch OAuth token refresh
+Sticky message system with auto-repost  
 
-Sticky message system with auto-repost
+Game Notification dropdown UI  
 
-Game Notification dropdown UI
+Auto delete channels with exceptions  
 
-Auto delete channels with exceptions
+Persistent storage architecture using hidden channel messages  
 
-Persistent storage architecture using hidden channel messages
+Admin commands for repairing/initializing storage  
 
-Admin commands for repairing/initializing storage
+Admin message edit & say tools  
 
-Admin message edit & say tools
-
-Background workers for Twitch, prizes, dead chat reset, join role, activity removal, infection expiry
+Background workers for Twitch, join role, activity removal, infection expiry  
