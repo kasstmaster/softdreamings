@@ -810,16 +810,10 @@ async def handle_dead_chat_message(message: discord.Message):
                     await m.delete()
                 except:
                     pass
-    if triggered_plague:
-        plague_text = (
-            f"**PLAGUE OUTBREAK**\n"
-            f"-# The sickness has chosen its host.\n"
-            f"-# {message.author.mention} bears the infection, binding the plague and ending today’s contagion.\n"
-            f"-# Those who claim Dead Chat after this moment will not be touched by the disease.\n"
-            f"-# [Learn More](https://discord.com/channels/1205041211610501120/1447330327923265586)"
-        )
         notice = await message.channel.send(plague_text)
-        await log_to_bot_channel(f"[PLAGUE] {message.author.id} infected on {today_str} in channel {message.channel.id}.")
+        await log_to_bot_channel(
+            f"[PLAGUE] {message.author.mention} infected on {today_str} in {message.channel.mention}."
+        )
     else:
         minutes = DEAD_CHAT_IDLE_SECONDS // 60
         notice_text = (
@@ -1188,6 +1182,7 @@ async def infected_watcher():
                 if now >= expires:
                     expired_ids.append(mid)
             if expired_ids:
+                cleared_mentions = []
                 for guild in bot.guilds:
                     role = guild.get_role(INFECTED_ROLE_ID)
                     if not role:
@@ -1197,12 +1192,16 @@ async def infected_watcher():
                         if member and role in member.roles:
                             try:
                                 await member.remove_roles(role, reason="Plague expired")
+                                cleared_mentions.append(member.mention)
                             except:
                                 pass
                 for mid in expired_ids:
                     infected_members.pop(mid, None)
                 await save_plague_storage()
-                await log_to_bot_channel(f"[PLAGUE] Cleared infected role for: {', '.join(str(i) for i in expired_ids)}")
+                if cleared_mentions:
+                    await log_to_bot_channel(f"[PLAGUE] Cleared infected role for: {', '.join(cleared_mentions)}")
+                else:
+                    await log_to_bot_channel(f"[PLAGUE] Cleared infected role for: {', '.join(str(i) for i in expired_ids)}")
         except Exception as e:
             await log_exception("infected_watcher", e)
         await asyncio.sleep(3600)
@@ -1240,7 +1239,9 @@ async def member_join_watcher():
                     if role not in member.roles:
                         try:
                             await member.add_roles(role, reason="Delayed member join role")
-                            await log_to_bot_channel(f"[MEMBERJOIN] Applied member role to {member.id} in guild {guild.id}.")
+                            await log_to_bot_channel(
+                                f"[MEMBERJOIN] Applied member role to {member.mention} in guild {guild.id}."
+                            )
                         except:
                             pass
                     await touch_member_activity(member)
