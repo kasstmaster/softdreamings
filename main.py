@@ -1324,11 +1324,13 @@ async def on_ready():
     startup_logging_done = True
     startup_log_buffer = []
 
+    await init_last_activity_storage()
+
     bot.loop.create_task(twitch_watcher())
     bot.loop.create_task(infected_watcher())
     bot.loop.create_task(member_join_watcher())
     bot.loop.create_task(activity_inactive_watcher())
-    await init_last_activity_storage()
+
     if sticky_storage_message_id is None:
         print("STORAGE NOT INITIALIZED — Run /sticky_init, /prize_init and /deadchat_init")
     else:
