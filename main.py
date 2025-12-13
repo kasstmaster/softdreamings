@@ -617,12 +617,12 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
     }
 
     data = await run_legacy_preview(interaction)
-    parsed = data.get("parsed")
+    parsed = data.get("parsed", {})
 
     guild_id = interaction.guild.id
 
     # ---- Birthdays ----
-    birthdays = raw.get("birthdays")
+    birthdays = parsed.get("birthdays")
     if birthdays:
         for user_id, mmdd in birthdays.items():
             try:
@@ -640,7 +640,7 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
         result["imported"]["birthdays"] = len(birthdays)
 
     # ---- Birthday public message ----
-    bpm = raw.get("birthday_public_message")
+    bpm = parsed.get("birthday_public_message")
     if bpm:
         await db_execute(
             """
@@ -656,7 +656,7 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
         result["imported"]["birthday_public_message"] = 1
 
     # ---- Movie Pool ----
-    pool = raw.get("movie_pool")
+    pool = parsed.get("movie_pool")
     if pool:
         entries = pool.get("entries", [])
         for user_id, title in entries:
@@ -688,7 +688,7 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
             result["imported"]["movie_pool_message"] = 1
 
     # ---- Stickies ----
-    stickies = raw.get("stickies")
+    stickies = parsed.get("stickies")
     if stickies:
         for channel_id, info in stickies.items():
             await db_execute(
