@@ -663,6 +663,13 @@ async def run_legacy_preview(interaction: discord.Interaction) -> dict:
     
     return result
 
+async def db_execute(sql: str, *args):
+    """Execute a SQL statement using the global asyncpg pool."""
+    if db_pool is None:
+        raise RuntimeError("DB pool is not initialized")
+    async with db_pool.acquire() as conn:
+        return await conn.execute(sql, *args)
+
 async def run_legacy_import(interaction: discord.Interaction) -> dict:
     """
     Import legacy *_DATA messages from the legacy storage channel into Postgres.
