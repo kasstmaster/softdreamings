@@ -606,6 +606,123 @@ async def run_legacy_preview(interaction: discord.Interaction) -> dict:
 
     return result
 
+async def run_legacy_import(interaction: discord.Interaction) -> dict:
+    """
+    Import legacy *_DATA messages from the legacy storage channel into Postgres.
+    Uses UPSERTs only. No deletes.
+    """
+    result = {
+        "imported": {},
+        "errors": []
+    }
+
+    data = await run_legacy_preview(interaction)
+    raw = data.get("raw", {})
+
+    guild_id = interaction.guild.id
+
+    # ---- Birthdays ----
+    birthdays = raw.get("birthdays")
+    if birthdays:
+        for user_id, mmdd in birthdays.items():
+            try:
+                await db_execute(
+                    """
+                    INSERT INTO birthdays (guild_id, user_id, mmdd)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (guild_id, user_id)
+                    DO UPDATE SET mmdd = EXCLUDED.mmdd
+                    """,
+                    guild_id, int(user_id), mmdd
+                )
+            except Exception as e:
+                result["errors"].append(f"birthday {user_id}: {e}")
+        result["imported"]["birthdays"] = len(birthdays)
+
+    # ---- Birthday public message ----
+    bpm = raw.get("birthday_public_message")
+    if bpm:
+        await db_execute(
+            """
+            UPDATE guild_settings
+            SET birthday_channel_id = $2,
+                birthday_message_id = $3
+            WHERE guild_id = $1
+            """,
+            guild_id,
+            bpm["channel_id"],
+            bpm["message_id"],
+        )
+        result["imported"]["birthday_public_message"] = 1
+
+    # ---- Movie Pool ----
+    pool = raw.get("movie_pool")
+    if pool:
+        entries = pool.get("entries", [])
+        for user_id, title in entries:
+            try:
+                await db_execute(
+                    """
+                    INSERT INTO movie_pool_picks (guild_id, user_id, title)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT DO NOTHING
+                    """,
+                    guild_id, int(user_id), title
+                )
+            except Exception as e:
+                result["errors"].append(f"pool {title}: {e}")
+        result["imported"]["movie_pool_entries"] = len(entries)
+
+        msg = pool.get("message")
+        if msg:
+            await db_execute(
+                """
+                INSERT INTO movie_pool_state (guild_id, channel_id, message_id)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (guild_id)
+                DO UPDATE SET channel_id = EXCLUDED.channel_id,
+                              message_id = EXCLUDED.message_id
+                """,
+                guild_id, msg["channel_id"], msg["message_id"]
+            )
+            result["imported"]["movie_pool_message"] = 1
+
+    # ---- Stickies ----
+    stickies = raw.get("stickies")
+    if stickies:
+        for channel_id, info in stickies.items():
+            await db_execute(
+                """
+                INSERT INTO sticky_messages (guild_id, channel_id, text, message_id)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (guild_id, channel_id)
+                DO UPDATE SET text = EXCLUDED.text,
+                              message_id = EXCLUDED.message_id
+                """,
+                guild_id,
+                int(channel_id),
+                info["text"],
+                info["message_id"]
+            )
+        result["imported"]["stickies"] = len(stickies)
+
+    # ---- Activity ----
+    activity = raw.get("activity")
+    if activity:
+        for user_id, iso_ts in activity.items():
+            await db_execute(
+                """
+                INSERT INTO member_activity (guild_id, user_id, last_seen)
+                VALUES ($1, $2, $3)
+                ON CONFLICT (guild_id, user_id)
+                DO UPDATE SET last_seen = EXCLUDED.last_seen
+                """,
+                guild_id, int(user_id), iso_ts
+            )
+        result["imported"]["activity"] = len(activity)
+
+    return result
+
 def parse_date_yyyy_mm_dd(s: str) -> date:
     parts = (s or "").strip().split("-")
     if len(parts) != 3:
@@ -2414,6 +2531,7 @@ async def config_system_cmd(
     ping: bool | None = None,
     health_check: bool | None = None,
     legacy_preview: bool | None = None,
+    legacy_import: bool | None = None,
 ):
     guild_id = require_guild(interaction)
     used = _count_set(info=info, timezone_set=timezone_set, timezone_show=timezone_show, ping=ping, health_check=health_check, legacy_preview=legacy_preview)
@@ -2444,6 +2562,21 @@ async def config_system_cmd(
         if not await require_dev_guild(interaction):
             return
         data = await run_legacy_preview(interaction)
+        await interaction.response.send_message(
+            data["summary"],
+            ephemeral=True,
+        )
+        return
+    
+    if action == "legacy_import":
+        if not await require_dev_guild(interaction):
+            return
+        data = await run_legacy_import(interaction)
+        await interaction.response.send_message(
+            f"✅ Legacy import complete:\n{data}",
+            ephemeral=True
+        )
+        return
 
         lines = []
         raw = data.get("raw", {})
