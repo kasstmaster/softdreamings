@@ -604,6 +604,63 @@ async def run_legacy_preview(interaction: discord.Interaction) -> dict:
                     else:
                         result["raw"][pfx] = obj
 
+    guild_id = interaction.guild.id
+    raw = result.get("raw", {})
+
+    parsed: dict = {}
+
+    # Birthdays JSON message (your first storage message: plain JSON)
+    b = raw.get("BIRTHDAYS_JSON")
+    if isinstance(b, dict):
+        payload = b.get(str(guild_id)) or b.get(guild_id)
+        if isinstance(payload, dict):
+            bd = payload.get("birthdays")
+            if isinstance(bd, dict):
+                parsed["birthdays"] = bd  # {user_id(str): "MM-DD"}
+            pm = payload.get("public_message")
+            if isinstance(pm, dict) and pm.get("channel_id") and pm.get("message_id"):
+                parsed["birthday_public_message"] = {
+                    "channel_id": int(pm["channel_id"]),
+                    "message_id": int(pm["message_id"]),
+                }
+
+    # Movie pool: POOL_DATA:{guild:{entries:[[uid,title],...], message:{...}}}
+    pool = raw.get("POOL_DATA")
+    if isinstance(pool, dict):
+        payload = pool.get(str(guild_id)) or pool.get(guild_id)
+        if isinstance(payload, dict):
+            entries = payload.get("entries")
+            msg = payload.get("message")
+            parsed_pool = {}
+            if isinstance(entries, list):
+                parsed_pool["entries"] = entries
+            if isinstance(msg, dict) and msg.get("channel_id") and msg.get("message_id"):
+                parsed_pool["message"] = {
+                    "channel_id": int(msg["channel_id"]),
+                    "message_id": int(msg["message_id"]),
+                }
+            if parsed_pool:
+                parsed["movie_pool"] = parsed_pool
+
+    # Stickies: STICKY_DATA:{channel_id:{text:"...", message_id:...}}
+    stickies = raw.get("STICKY_DATA")
+    if isinstance(stickies, dict):
+        parsed["stickies"] = stickies
+
+    # Activity: ACTIVITY_DATA:{user_id:"iso timestamp", ...}
+    activity = raw.get("ACTIVITY_DATA")
+    if isinstance(activity, dict):
+        parsed["activity"] = activity
+
+    # (Optional for later) Config: CONFIG_DATA:{guild_id:{...}}
+    cfg = raw.get("CONFIG_DATA")
+    if isinstance(cfg, dict):
+        payload = cfg.get(str(guild_id)) or cfg.get(guild_id)
+        if isinstance(payload, dict):
+            parsed["config"] = payload
+
+    result["parsed"] = parsed
+    
     return result
 
 async def run_legacy_import(interaction: discord.Interaction) -> dict:
