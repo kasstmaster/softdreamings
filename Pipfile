@@ -1,13 +1,11 @@
 [[source]]
+name = "pypi"
 url = "https://pypi.org/simple"
 verify_ssl = true
-name = "pypi"
 
 [packages]
-py-cord = "==2.6.0"
-aiohttp = "*"
-
-[dev-packages]
+discord.py = "*"
+asyncpg = "*"
 
 [requires]
 python_version = "3.11"
