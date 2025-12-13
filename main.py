@@ -617,7 +617,7 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
     }
 
     data = await run_legacy_preview(interaction)
-    raw = data.get("raw", {})
+    parsed = data.get("parsed")
 
     guild_id = interaction.guild.id
 
