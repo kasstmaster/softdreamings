@@ -2534,11 +2534,11 @@ async def config_system_cmd(
     legacy_import: bool | None = None,
 ):
     guild_id = require_guild(interaction)
-    used = _count_set(info=info, timezone_set=timezone_set, timezone_show=timezone_show, ping=ping, health_check=health_check, legacy_preview=legacy_preview)
+    used = _count_set(info=info, timezone_set=timezone_set, timezone_show=timezone_show, ping=ping, health_check=health_check, legacy_preview=legacy_preview, legacy_import=legacy_import,)
     ok = await _require_one_action(
         interaction,
         used,
-        "Examples: `/config system ping:true` • `/config system health_check:true` • `/config system legacy_preview:true` • `/config system timezone_set:America/Los_Angeles` • `/config system timezone_show:true` • `/config system info:true`",
+        "Examples: `/config system ping:true` • `/config system health_check:true` • `/config system legacy_preview:true` • `/config system legacy_import:true` • `/config system timezone_set:America/Los_Angeles` • `/config system timezone_show:true` • `/config system info:true`",
     )
     if not ok:
         return
