@@ -707,7 +707,7 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
         result["imported"]["stickies"] = len(stickies)
 
     # ---- Activity ----
-    activity = raw.get("activity")
+    activity = parsed.get("activity")
     if activity:
         for user_id, iso_ts in activity.items():
             await db_execute(
