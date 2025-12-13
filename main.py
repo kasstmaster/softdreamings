@@ -535,7 +535,7 @@ async def require_dev_guild(interaction: discord.Interaction) -> bool:
     return True
 
 
-async def legacy_preview(interaction: discord.Interaction) -> dict:
+async def run_legacy_preview(interaction: discord.Interaction) -> dict:
     """Read legacy *_DATA messages from the legacy storage channel and return parsed objects."""
     result: dict = {"raw": {}, "errors": []}
 
@@ -2443,7 +2443,7 @@ async def config_system_cmd(
     if action == "legacy_preview":
         if not await require_dev_guild(interaction):
             return
-        data = await legacy_preview(interaction)
+        data = await run_legacy_preview(interaction)
 
         lines = []
         raw = data.get("raw", {})
