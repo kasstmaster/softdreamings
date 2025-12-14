@@ -693,6 +693,41 @@ async def run_legacy_preview(interaction: discord.Interaction) -> dict:
     result["parsed"] = parsed
     return result
 
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+def parse_legacy_timestamp(value) -> datetime:
+    """
+    Accepts legacy timestamps that may look like:
+      - '2025-12-13T19:58:17.335277+00:00Z'
+      - '2025-12-13T19:58:17+00:00'
+      - '2025-12-13T19:58:17Z'
+      - '2025-12-13T19:58:17.335277'
+    Returns a timezone-aware datetime (defaults to UTC if missing tz).
+    """
+    if isinstance(value, datetime):
+        return value
+
+    s = (value or "").strip()
+    if not s:
+        raise RuntimeError("empty timestamp")
+
+    # Common legacy pattern: '+00:00Z' (double tz marker). Normalize it.
+    if s.endswith("Z") and ("+" in s or "-" in s[10:]):
+        s = s[:-1]
+
+    # If just '...Z', normalize to '+00:00'
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+
+    dt = datetime.fromisoformat(s)
+
+    # If naive, assume UTC
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+
+    return dt
+
 async def db_execute(sql: str, *args):
     """Execute a SQL statement using the global asyncpg pool."""
     if db_pool is None:
@@ -813,15 +848,19 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
     activity = parsed.get("activity")
     if activity:
         for user_id, iso_ts in activity.items():
-            await db_execute(
-                """
-                INSERT INTO member_activity (guild_id, user_id, last_message_at)
-                VALUES ($1, $2, $3::timestamptz)
-                ON CONFLICT (guild_id, user_id)
-                DO UPDATE SET last_message_at = EXCLUDED.last_message_at
-                """,
-                guild_id, int(user_id), iso_ts
-            )
+            try:
+                dt = parse_legacy_timestamp(iso_ts)  # <-- datetime
+                await db_execute(
+                    """
+                    INSERT INTO member_activity (guild_id, user_id, last_message_at)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (guild_id, user_id)
+                    DO UPDATE SET last_message_at = EXCLUDED.last_message_at
+                    """,
+                    guild_id, int(user_id), dt
+                )
+            except Exception as e:
+                result["errors"].append(f"activity {user_id}: {e}")
         result["imported"]["activity"] = len(activity)
 
     return result
