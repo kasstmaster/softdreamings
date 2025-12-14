@@ -3333,9 +3333,13 @@ async def ensure_movie_tables():
             guild_id BIGINT NOT NULL,
             user_id BIGINT NOT NULL,
             title TEXT NOT NULL,
-            added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            PRIMARY KEY (guild_id, lower(title))
+            added_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        """)
+        # Helpful index for pool-wide duplicate checks (expression index is allowed here)
+        await conn.execute("""
+        CREATE INDEX IF NOT EXISTS idx_movie_pool_picks_guild_lower_title
+        ON movie_pool_picks (guild_id, lower(title));
         """)
         await conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_movie_pool_picks_guild_user
