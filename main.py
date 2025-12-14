@@ -149,7 +149,7 @@ MIGRATIONS = [
 
     ("2025_12_13_add_unique_movie_pool_picks", [
         "CREATE UNIQUE INDEX IF NOT EXISTS movie_pool_picks_unique_idx "
-        "ON movie_pool_picks (guild_id, user_id, title);",
+        "ON movie_pool_picks (guild_id, user_id, title_norm);",
     ]),
 
     ("2025_12_13_add_legacy_cols_prizes", [
@@ -491,6 +491,14 @@ async def ensure_can_write_guild_settings(guild_id: int) -> bool:
 
 def fmt(ok: bool, label: str, detail: str = "") -> str:
     return f"{'✅' if ok else '❌'} {label}{(' — ' + detail) if detail else ''}"
+
+import re
+
+def normalize_title(s: str) -> str:
+    s = (s or "").strip().lower()
+    s = re.sub(r"\s+", " ", s)
+    s = re.sub(r"[^a-z0-9 ]+", "", s)
+    return s
 
 async def run_test_all(interaction: discord.Interaction) -> tuple[str, list[str]]:
     if interaction.guild is None:
@@ -955,24 +963,27 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
             for row in entries:
                 try:
                     user_id, title = row
+                    title = str(title)[:512]
+                    title_norm = normalize_title(title)
+
                     await db_execute(
                         """
-                        INSERT INTO movie_pool_picks (guild_id, user_id, title, created_at)
-                        VALUES ($1, $2, $3, NOW())
-                        ON CONFLICT (guild_id, user_id, title)
-                        DO NOTHING
+                        INSERT INTO movie_pool_picks (guild_id, user_id, title, title_norm, created_at, updated_at)
+                        VALUES ($1, $2, $3, $4, NOW(), NOW())
+                        ON CONFLICT (guild_id, user_id, title_norm)
+                        DO UPDATE SET
+                            title = EXCLUDED.title,
+                            updated_at = NOW()
                         """,
                         guild_id,
                         int(user_id),
-                        str(title)[:512],
+                        title,
+                        title_norm,
                     )
                     imported += 1
                 except Exception as e:
                     result["errors"].append(f"movie_pool entry {row!r}: {e}")
             result["imported"]["movie_pool_picks"] = imported
-            result["imported"]["movie_pool_state"] = 1
-        except Exception as e:
-            result["errors"].append(f"movie_pool: {e}")
 
     stickies = parsed.get("stickies")
     if isinstance(stickies, dict) and stickies:
