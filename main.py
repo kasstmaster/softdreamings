@@ -2794,10 +2794,29 @@ async def config_system_cmd(
         if not await require_dev_guild(interaction):
             return
         data = await run_legacy_import(interaction)
-        await interaction.response.send_message(
-            f"✅ Legacy import complete:\n{data}",
-            ephemeral=True
+
+        imported = data.get("imported", {}) or {}
+        errors = data.get("errors", []) or []
+        
+        imported_bits = ", ".join(f"{k}={v}" for k, v in imported.items()) if imported else "none"
+        summary = (
+            "✅ Legacy import complete.\n"
+            f"Imported: {imported_bits}\n"
+            f"Errors: {len(errors)}"
         )
+        
+        await interaction.response.send_message(summary, ephemeral=True)
+        
+        # Attach full output if it's long (or if there are errors)
+        import io, json
+        full_text = json.dumps(data, indent=2, default=str)
+        if len(full_text) > 1800 or errors:
+            buf = io.BytesIO(full_text.encode("utf-8"))
+            await interaction.followup.send(
+                content="Full legacy import output attached.",
+                file=discord.File(fp=buf, filename="legacy_import_output.json"),
+                ephemeral=True,
+            )
         return
 
         lines = []
