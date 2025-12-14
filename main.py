@@ -145,6 +145,7 @@ ALTER TABLE guild_settings
   ADD COLUMN IF NOT EXISTS birthday_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS birthday_role_id BIGINT NULL,
   ADD COLUMN IF NOT EXISTS birthday_channel_id BIGINT NULL,
+  ADD COLUMN IF NOT EXISTS birthday_message_id BIGINT NULL,
   ADD COLUMN IF NOT EXISTS birthday_message_text TEXT NOT NULL DEFAULT '🎉 Happy Birthday {user}! 🎂',
   ADD COLUMN IF NOT EXISTS birthday_list_channel_id BIGINT NULL,
   ADD COLUMN IF NOT EXISTS birthday_list_message_id BIGINT NULL,
@@ -359,6 +360,25 @@ CREATE TABLE IF NOT EXISTS qotd_history (
 );
 """
 
+MOVIE_POOL_PICKS_SQL = """
+CREATE TABLE IF NOT EXISTS movie_pool_picks (
+  guild_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  title TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (guild_id, user_id, title)
+);
+"""
+
+MOVIE_POOL_STATE_SQL = """
+CREATE TABLE IF NOT EXISTS movie_pool_state (
+  guild_id BIGINT PRIMARY KEY,
+  channel_id BIGINT NULL,
+  message_id BIGINT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
 REQUIRED_TABLES = [
     "guild_settings",
     "member_activity",
@@ -372,6 +392,11 @@ REQUIRED_TABLES = [
     "prize_definitions",
     "prize_schedules",
     "prize_drops",
+    "movie_pool_picks",
+    "movie_pool_state",
+    "sticky_messages",
+    "birthdays",
+    "birthday_announce_log",
 ]
 
 async def table_exists(name: str) -> bool:
@@ -686,22 +711,30 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
     guild_id = interaction.guild.id
 
     # ---- Birthdays ----
-    birthdays = parsed.get("birthdays")
-    if birthdays:
-        for user_id, mmdd in birthdays.items():
-            try:
-                await db_execute(
-                    """
-                    INSERT INTO birthdays (guild_id, user_id, mmdd)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET mmdd = EXCLUDED.mmdd
-                    """,
-                    guild_id, int(user_id), mmdd
-                )
-            except Exception as e:
-                result["errors"].append(f"birthday {user_id}: {e}")
-        result["imported"]["birthdays"] = len(birthdays)
+birthdays = parsed.get("birthdays")
+if birthdays:
+    for user_id, mmdd in birthdays.items():
+        try:
+            parts = str(mmdd).strip().split("-")
+            if len(parts) != 2:
+                raise RuntimeError(f"Invalid MM-DD: {mmdd!r}")
+            month = int(parts[0])
+            day = int(parts[1])
+
+            await db_execute(
+                """
+                INSERT INTO birthdays (guild_id, user_id, month, day, year, set_by_user_id, updated_at)
+                VALUES ($1, $2, $3, $4, NULL, NULL, NOW())
+                ON CONFLICT (guild_id, user_id)
+                DO UPDATE SET month = EXCLUDED.month,
+                              day = EXCLUDED.day,
+                              updated_at = NOW()
+                """,
+                guild_id, int(user_id), month, day
+            )
+        except Exception as e:
+            result["errors"].append(f"birthday {user_id}: {e}")
+    result["imported"]["birthdays"] = len(birthdays)
 
     # ---- Birthday public message ----
     bpm = parsed.get("birthday_public_message")
@@ -757,10 +790,10 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
         for channel_id, info in stickies.items():
             await db_execute(
                 """
-                INSERT INTO sticky_messages (guild_id, channel_id, text, message_id)
+                INSERT INTO sticky_messages (guild_id, channel_id, content, message_id)
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (guild_id, channel_id)
-                DO UPDATE SET text = EXCLUDED.text,
+                DO UPDATE SET content = EXCLUDED.content,
                               message_id = EXCLUDED.message_id
                 """,
                 guild_id,
@@ -776,10 +809,10 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
         for user_id, iso_ts in activity.items():
             await db_execute(
                 """
-                INSERT INTO member_activity (guild_id, user_id, last_seen)
-                VALUES ($1, $2, $3)
+                INSERT INTO member_activity (guild_id, user_id, last_message_at)
+                VALUES ($1, $2, $3::timestamptz)
                 ON CONFLICT (guild_id, user_id)
-                DO UPDATE SET last_seen = EXCLUDED.last_seen
+                DO UPDATE SET last_message_at = EXCLUDED.last_message_at
                 """,
                 guild_id, int(user_id), iso_ts
             )
@@ -833,13 +866,14 @@ async def init_db():
     global db_pool
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is missing")
+
     db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
-    await ensure_guild_settings_schema()
-    await ensure_movie_pool_state_schema()
+
     async with db_pool.acquire() as conn:
         await conn.execute("SET TIME ZONE 'UTC';")
+
+        # --- Create tables first ---
         await conn.execute(GUILD_SETTINGS_SQL)
-        await conn.execute(SCHEMA_ALTERS_SQL)
         await conn.execute(MEMBER_ACTIVITY_SQL)
         await conn.execute(ACTIVITY_CHANNELS_SQL)
         await conn.execute(DEADCHAT_CHANNELS_SQL)
@@ -858,6 +892,13 @@ async def init_db():
         await conn.execute(AUTODELETE_IGNORE_PHRASES_SQL)
         await conn.execute(VOICE_ROLE_LINKS_SQL)
         await conn.execute(QOTD_HISTORY_SQL)
+
+        # --- Movie pool tables you were missing ---
+        await conn.execute(MOVIE_POOL_PICKS_SQL)
+        await conn.execute(MOVIE_POOL_STATE_SQL)
+
+        # --- Then alter/extend schema last ---
+        await conn.execute(SCHEMA_ALTERS_SQL)
 
 async def close_db():
     global db_pool
