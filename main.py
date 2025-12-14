@@ -821,12 +821,21 @@ async def ensure_guild_settings_schema():
         """
     )
 
+async def ensure_movie_pool_state_schema():
+    await db_execute(
+        """
+        ALTER TABLE movie_pool_state
+        ADD COLUMN IF NOT EXISTS channel_id BIGINT;
+        """
+    )
+
 async def init_db():
     global db_pool
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is missing")
     db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
     await ensure_guild_settings_schema()
+    await ensure_movie_pool_state_schema()
     async with db_pool.acquire() as conn:
         await conn.execute("SET TIME ZONE 'UTC';")
         await conn.execute(GUILD_SETTINGS_SQL)
