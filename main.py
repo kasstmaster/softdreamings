@@ -968,10 +968,11 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
 
                     await db_execute(
                         """
-                        INSERT INTO movie_pool_picks (guild_id, user_id, title, title_norm, created_at, updated_at)
-                        VALUES ($1, $2, $3, $4, NOW(), NOW())
+                        INSERT INTO movie_pool_picks (guild_id, user_id, title, title_norm, created_at)
+                        VALUES ($1, $2, $3, $4, NOW())
                         ON CONFLICT (guild_id, user_id, title_norm)
-                        DO UPDATE SET title = EXCLUDED.title, updated_at = NOW()
+                        DO UPDATE SET
+                            title = EXCLUDED.title
                         """,
                         guild_id,
                         int(user_id),
