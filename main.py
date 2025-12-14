@@ -3105,10 +3105,18 @@ async def config_system_cmd(
 
     action = used[0]
 
+    if action in ("health_check", "legacy_preview", "legacy_import"):
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True, thinking=True)
+
     if action == "ping":
+        
         if not await require_dev_guild(interaction):
             return
-        await interaction.response.send_message("pong ✅", ephemeral=True)
+                await interaction.followup.send(
+            data["summary"],
+            ephemeral=True,
+        )
         return
 
     if action == "health_check":
@@ -3116,8 +3124,9 @@ async def config_system_cmd(
             return
         title, lines = await run_test_all(interaction)
         embed = discord.Embed(title=title, description="\n".join(lines))
-        await interaction.response.send_message(embed=embed, ephemeral=True)
-        
+        await interaction.followup.send(embed=embed, ephemeral=True)
+        return
+
     if action == "legacy_preview":
         if not await require_dev_guild(interaction):
             return
@@ -3143,7 +3152,7 @@ async def config_system_cmd(
             f"Errors: {len(errors)}"
         )
         
-        await interaction.response.send_message(summary, ephemeral=True)
+        await interaction.followup.send(summary, ephemeral=True)
         
         import io, json
         full_text = json.dumps(data, indent=2, default=str)
@@ -4658,10 +4667,15 @@ async def on_ready():
     print(f"✅ Logged in as {bot.user} ({bot.user.id})")
 
 async def _safe_reply(interaction: discord.Interaction, content: str):
-    if interaction.response.is_done():
-        await interaction.followup.send(content, ephemeral=True)
-    else:
-        await interaction.response.send_message(content, ephemeral=True)
+        try:
+            if interaction.response.is_done():
+                await interaction.followup.send(content, ephemeral=True)
+            else:
+                await interaction.response.send_message(content, ephemeral=True)
+        except discord.NotFound:
+            return
+        except discord.HTTPException:
+            return
 
 @bot.tree.error
 async def on_app_command_error(
