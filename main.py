@@ -147,7 +147,7 @@ MIGRATIONS = [
         "ALTER TABLE IF EXISTS movie_pool_picks ALTER COLUMN created_at SET DEFAULT NOW();",
     ]),
 
-    ("2025_12_13_add_unique_movie_pool_picks", [
+    ("2025_12_13_add_unique_movie_pool_picks_v2", [
         "CREATE UNIQUE INDEX IF NOT EXISTS movie_pool_picks_unique_idx "
         "ON movie_pool_picks (guild_id, user_id, title_norm);",
     ]),
