@@ -2673,7 +2673,7 @@ async def config_system_cmd(
     health_check: bool | None = None,
     legacy_preview: bool | None = None,
     legacy_import: bool | None = None,
-):
+    ):
 
     guild_id = require_guild(interaction)
     used = _count_set(info=info, timezone_set=timezone_set, timezone_show=timezone_show, ping=ping, health_check=health_check, legacy_preview=legacy_preview, legacy_import=legacy_import)
@@ -2702,34 +2702,34 @@ async def config_system_cmd(
         return
 
     
-if action == "legacy_preview":
-    if not await require_dev_guild(interaction):
+    if action == "legacy_preview":
+        if not await require_dev_guild(interaction):
+            return
+        data = await run_legacy_preview(interaction)
+        await interaction.response.send_message(data.get("summary", "Legacy preview complete."), ephemeral=True)
         return
-    data = await run_legacy_preview(interaction)
-    await interaction.response.send_message(data.get("summary", "Legacy preview complete."), ephemeral=True)
-    return
 
-if action == "legacy_import":
-    if not await require_dev_guild(interaction):
+    if action == "legacy_import":
+        if not await require_dev_guild(interaction):
+            return
+        data = await run_legacy_import(interaction)
+        # Friendly output
+        imported = data.get("imported", {})
+        errs = data.get("errors", [])
+        lines = ["✅ Legacy import complete:"]
+        if imported:
+            for k, v in imported.items():
+                lines.append(f"• {k}: {v}")
+        else:
+            lines.append("• (nothing imported)")
+        if errs:
+            lines.append("• errors:")
+            for e in errs[:5]:
+                lines.append(f"  - {e}")
+        await interaction.response.send_message("\n".join(lines), ephemeral=True)
         return
-    data = await run_legacy_import(interaction)
-    # Friendly output
-    imported = data.get("imported", {})
-    errs = data.get("errors", [])
-    lines = ["✅ Legacy import complete:"]
-    if imported:
-        for k, v in imported.items():
-            lines.append(f"• {k}: {v}")
-    else:
-        lines.append("• (nothing imported)")
-    if errs:
-        lines.append("• errors:")
-        for e in errs[:5]:
-            lines.append(f"  - {e}")
-    await interaction.response.send_message("\n".join(lines), ephemeral=True)
-    return
 
-if action == "timezone_set":
+    if action == "timezone_set":
         await upsert_timezone(guild_id, timezone_set)
         await interaction.response.send_message(f"✅ Timezone set to `{timezone_set}`", ephemeral=True)
         return
