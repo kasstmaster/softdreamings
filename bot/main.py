@@ -2411,114 +2411,6 @@ async def active_show(interaction: discord.Interaction):
         ephemeral=True,
     )
 
-
-
-# -------- NEW: /active config (single-command control panel) --------
-@discord.app_commands.default_permissions(manage_guild=True)
-@active_group.command(name="config", description="Configure Activity Tracking (one option at a time)")
-@discord.app_commands.checks.cooldown(rate=1, per=10.0)
-@discord.app_commands.checks.has_permissions(manage_guild=True)
-@discord.app_commands.describe(
-    set_role="Set the Active Member role",
-    clear_role="Clear the Active Member role",
-    threshold_minutes="Set inactivity threshold",
-    mode="Set activity mode",
-    add_channel="Add a channel to count activity (channels mode)",
-    remove_channel="Remove a channel from activity channels",
-    list_channels="If true, list activity channels",
-    show="If true, show current Activity settings",
-)
-@discord.app_commands.choices(threshold_minutes=ACTIVE_THRESHOLD_CHOICES, mode=ACTIVE_MODE_CHOICES)
-async def active_config_cmd(
-    interaction: discord.Interaction,
-    set_role: discord.Role | None = None,
-    clear_role: bool | None = None,
-    threshold_minutes: discord.app_commands.Choice[int] | None = None,
-    mode: discord.app_commands.Choice[str] | None = None,
-    add_channel: discord.TextChannel | None = None,
-    remove_channel: discord.TextChannel | None = None,
-    list_channels: bool | None = None,
-    show: bool | None = None,
-):
-    guild_id = require_guild(interaction)
-
-    actions = {
-        "set_role": set_role,
-        "clear_role": clear_role,
-        "threshold_minutes": threshold_minutes,
-        "mode": mode,
-        "add_channel": add_channel,
-        "remove_channel": remove_channel,
-        "list_channels": list_channels,
-        "show": show,
-    }
-    used = {k: v for k, v in actions.items() if v is not None}
-
-    if len(used) != 1:
-        await interaction.response.send_message(
-            "❌ Please provide **exactly one** option in `/active config`.",
-            ephemeral=True,
-        )
-        return
-
-    action, value = next(iter(used.items()))
-
-    if action == "set_role":
-        await set_active_role(guild_id, int(set_role.id))
-        await interaction.response.send_message(f"✅ Active role set to {set_role.mention}", ephemeral=True)
-        return
-
-    if action == "clear_role":
-        if bool(clear_role):
-            await set_active_role(guild_id, None)
-        await interaction.response.send_message("✅ Active role cleared.", ephemeral=True)
-        return
-
-    if action == "threshold_minutes":
-        await set_active_threshold(guild_id, int(threshold_minutes.value))
-        await interaction.response.send_message(f"✅ Active threshold set to {threshold_minutes.value} minute(s)", ephemeral=True)
-        return
-
-    if action == "mode":
-        await set_active_mode(guild_id, str(mode.value))
-        await interaction.response.send_message(f"✅ Activity mode set to `{mode.value}`", ephemeral=True)
-        return
-
-    if action == "add_channel":
-        await add_activity_channel(guild_id, int(add_channel.id))
-        await interaction.response.send_message(f"✅ Added {add_channel.mention} to activity channels", ephemeral=True)
-        return
-
-    if action == "remove_channel":
-        await remove_activity_channel(guild_id, int(remove_channel.id))
-        await interaction.response.send_message(f"✅ Removed {remove_channel.mention} from activity channels", ephemeral=True)
-        return
-
-    if action == "list_channels":
-        if not bool(list_channels):
-            await interaction.response.send_message("✅ Done.", ephemeral=True)
-            return
-        ids = await list_activity_channels(guild_id)
-        if not ids:
-            await interaction.response.send_message("No activity channels set.", ephemeral=True)
-            return
-        mentions = []
-        for cid in ids:
-            ch = interaction.guild.get_channel(cid) if interaction.guild else None
-            mentions.append(ch.mention if ch else f"`{cid}`")
-        await interaction.response.send_message("Activity channels:\n" + "\n".join(mentions), ephemeral=True)
-        return
-
-    if action == "show":
-        if not bool(show):
-            await interaction.response.send_message("✅ Done.", ephemeral=True)
-            return
-        s = await get_guild_settings(guild_id)
-        await interaction.response.send_message(
-            f"Mode: `{s['active_mode']}`\nThreshold: `{s['active_threshold_minutes']}` minute(s)\nActive role ID: `{s['active_role_id']}`",
-            ephemeral=True,
-        )
-        return
 deadchat_group = discord.app_commands.Group(name="deadchat", description="Dead Chat settings")
 
 @discord.app_commands.default_permissions(manage_guild=True)
@@ -2616,142 +2508,6 @@ async def deadchat_show_cmd(interaction: discord.Interaction):
     )
 
 
-
-
-# -------- NEW: /deadchat config (single-command control panel) --------
-@discord.app_commands.default_permissions(manage_guild=True)
-@deadchat_group.command(name="config", description="Configure Dead Chat (one option at a time)")
-@discord.app_commands.checks.cooldown(rate=1, per=10.0)
-@discord.app_commands.checks.has_permissions(manage_guild=True)
-@discord.app_commands.describe(
-    enabled="Enable/disable Dead Chat system",
-    set_role="Set the Dead Chat role",
-    clear_role="Clear the Dead Chat role",
-    idle_minutes="Set the idle threshold for Dead Chat",
-    cooldown_minutes="Set cooldown before a user can win again",
-    require_active="Require Active role to win Dead Chat",
-    add_channel="Enable Dead Chat in a channel",
-    idle_override_minutes="Optional per-channel idle override (minutes) for add_channel",
-    remove_channel="Disable Dead Chat in a channel",
-    list_channels="If true, list Dead Chat channels",
-    show="If true, show Dead Chat settings",
-)
-@discord.app_commands.choices(
-    enabled=BOOL_CHOICES,
-    idle_minutes=DEADCHAT_IDLE_CHOICES,
-    cooldown_minutes=DEADCHAT_COOLDOWN_CHOICES,
-    require_active=BOOL_CHOICES,
-)
-async def deadchat_config_cmd(
-    interaction: discord.Interaction,
-    enabled: discord.app_commands.Choice[int] | None = None,
-    set_role: discord.Role | None = None,
-    clear_role: bool | None = None,
-    idle_minutes: discord.app_commands.Choice[int] | None = None,
-    cooldown_minutes: discord.app_commands.Choice[int] | None = None,
-    require_active: discord.app_commands.Choice[int] | None = None,
-    add_channel: discord.TextChannel | None = None,
-    idle_override_minutes: int | None = None,
-    remove_channel: discord.TextChannel | None = None,
-    list_channels: bool | None = None,
-    show: bool | None = None,
-):
-    guild_id = require_guild(interaction)
-
-    actions = {
-        "enabled": enabled,
-        "set_role": set_role,
-        "clear_role": clear_role,
-        "idle_minutes": idle_minutes,
-        "cooldown_minutes": cooldown_minutes,
-        "require_active": require_active,
-        "add_channel": add_channel,
-        "remove_channel": remove_channel,
-        "list_channels": list_channels,
-        "show": show,
-    }
-    used = {k: v for k, v in actions.items() if v is not None}
-
-    if len(used) != 1:
-        await interaction.response.send_message(
-            "❌ Please provide **exactly one** option in `/deadchat config`.",
-            ephemeral=True,
-        )
-        return
-
-    action, value = next(iter(used.items()))
-
-    if action == "enabled":
-        await deadchat_set_enabled(guild_id, bool(enabled.value))
-        await interaction.response.send_message(f"✅ Dead Chat enabled set to `{bool(enabled.value)}`.", ephemeral=True)
-        return
-
-    if action == "set_role":
-        await set_deadchat_role(guild_id, int(set_role.id))
-        await interaction.response.send_message(f"✅ Dead Chat role set to {set_role.mention}", ephemeral=True)
-        return
-
-    if action == "clear_role":
-        if bool(clear_role):
-            await set_deadchat_role(guild_id, None)
-        await interaction.response.send_message("✅ Dead Chat role cleared.", ephemeral=True)
-        return
-
-    if action == "idle_minutes":
-        await set_deadchat_idle(guild_id, int(idle_minutes.value))
-        await interaction.response.send_message(f"✅ Dead Chat idle set to {idle_minutes.value} minute(s)", ephemeral=True)
-        return
-
-    if action == "cooldown_minutes":
-        await set_deadchat_cooldown(guild_id, int(cooldown_minutes.value))
-        await interaction.response.send_message(f"✅ Dead Chat cooldown set to {cooldown_minutes.value} minute(s)", ephemeral=True)
-        return
-
-    if action == "require_active":
-        await set_deadchat_requires_active(guild_id, bool(require_active.value))
-        await interaction.response.send_message(f"✅ Require Active set to `{bool(require_active.value)}`", ephemeral=True)
-        return
-
-    if action == "add_channel":
-        if idle_override_minutes is not None and (idle_override_minutes < 1 or idle_override_minutes > 1440):
-            await interaction.response.send_message("❌ idle_override_minutes must be between 1 and 1440", ephemeral=True)
-            return
-        await add_deadchat_channel(guild_id, int(add_channel.id), idle_override_minutes)
-        await interaction.response.send_message(f"✅ Dead Chat enabled in {add_channel.mention}", ephemeral=True)
-        return
-
-    if action == "remove_channel":
-        await remove_deadchat_channel(guild_id, int(remove_channel.id))
-        await interaction.response.send_message(f"✅ Dead Chat disabled in {remove_channel.mention}", ephemeral=True)
-        return
-
-    if action == "list_channels":
-        if not bool(list_channels):
-            await interaction.response.send_message("✅ Done.", ephemeral=True)
-            return
-        rows = await list_deadchat_channels(guild_id)
-        if not rows:
-            await interaction.response.send_message("No Dead Chat channels set.", ephemeral=True)
-            return
-        lines = []
-        for r in rows:
-            ch = interaction.guild.get_channel(int(r["channel_id"])) if interaction.guild else None
-            name = ch.mention if ch else f"`{r['channel_id']}`"
-            idle = f"{r['idle_minutes']}m" if r["idle_minutes"] is not None else "default"
-            lines.append(f"{name} (idle: {idle})")
-        await interaction.response.send_message("\n".join(lines), ephemeral=True)
-        return
-
-    if action == "show":
-        if not bool(show):
-            await interaction.response.send_message("✅ Done.", ephemeral=True)
-            return
-        s = await get_guild_settings(guild_id)
-        await interaction.response.send_message(
-            f"Dead Chat enabled: `{s['deadchat_enabled']}`\nDead Chat role ID: `{s['deadchat_role_id']}`\nIdle: `{s['deadchat_idle_minutes']}` minute(s)\nCooldown: `{s['deadchat_cooldown_minutes']}` minute(s)\nRequires Active: `{s['deadchat_requires_active']}`",
-            ephemeral=True,
-        )
-        return
 plague_group = discord.app_commands.Group(name="plague", description="Plague Day settings")
 
 @discord.app_commands.default_permissions(manage_guild=True)
@@ -2817,68 +2573,6 @@ async def plague_disable_cmd(interaction: discord.Interaction):
     await plague_set_enabled(guild_id, False)
     await interaction.response.send_message("✅ Plague Day disabled.", ephemeral=True)
 
-
-
-# -------- NEW: /plague config (single-command control panel) --------
-@discord.app_commands.default_permissions(manage_guild=True)
-@plague_group.command(name="config", description="Configure Plague Day (one option at a time)")
-@discord.app_commands.checks.cooldown(rate=1, per=10.0)
-@discord.app_commands.checks.has_permissions(manage_guild=True)
-@discord.app_commands.describe(
-    set_role="Set the Plague role",
-    schedule_day="Schedule a Plague Day (YYYY-MM-DD)",
-    enabled="Enable/disable Plague Day",
-)
-@discord.app_commands.choices(enabled=BOOL_CHOICES)
-async def plague_config_cmd(
-    interaction: discord.Interaction,
-    set_role: discord.Role | None = None,
-    schedule_day: str | None = None,
-    enabled: discord.app_commands.Choice[int] | None = None,
-):
-    guild_id = require_guild(interaction)
-
-    actions = {"set_role": set_role, "schedule_day": schedule_day, "enabled": enabled}
-    used = {k: v for k, v in actions.items() if v is not None}
-
-    if len(used) != 1:
-        await interaction.response.send_message("❌ Provide exactly one option in `/plague config`.", ephemeral=True)
-        return
-
-    action, value = next(iter(used.items()))
-
-    if action == "set_role":
-        await plague_set_role(guild_id, int(set_role.id))
-        await interaction.response.send_message(f"✅ Plague role set to {set_role.mention}", ephemeral=True)
-        return
-
-    if action == "schedule_day":
-        try:
-            d = parse_date_yyyy_mm_dd(str(schedule_day))
-        except Exception:
-            await interaction.response.send_message("❌ Date must be YYYY-MM-DD", ephemeral=True)
-            return
-        await plague_set_scheduled_day(guild_id, d)
-        async with db_pool.acquire() as conn:
-            await conn.execute("DELETE FROM plague_daily_state WHERE guild_id = $1 AND day = $2;", guild_id, d)
-        await interaction.response.send_message(f"✅ Plague Day scheduled for `{d.isoformat()}` (triggers after 12:00 UTC).", ephemeral=True)
-        return
-
-    if action == "enabled":
-        turning_on = bool(enabled.value)
-        if turning_on:
-            s = await get_guild_settings(guild_id)
-            missing = []
-            if not s.get("plague_role_id"):
-                missing.append("plague role")
-            if not s.get("plague_scheduled_day"):
-                missing.append("scheduled day")
-            if missing:
-                await interaction.response.send_message("❌ Can't enable Plague Day yet. Missing: " + ", ".join(missing) + ".", ephemeral=True)
-                return
-        await plague_set_enabled(guild_id, turning_on)
-        await interaction.response.send_message(f"✅ Plague Day enabled set to `{turning_on}`.", ephemeral=True)
-        return
 prizes_group = discord.app_commands.Group(name="prizes", description="Prize settings")
 
 @prizes_group.command(name="enable", description="Enable/disable prize system")
@@ -3515,13 +3209,6 @@ async def welcome_config_cmd(
 # =========================
 # Register these groups
 # =========================
-bot.tree.add_command(active_group)
-bot.tree.add_command(deadchat_group)
-bot.tree.add_command(plague_group)
-bot.tree.add_command(prizes_group)
-bot.tree.add_command(timezone_group)
-bot.tree.add_command(status_group)
-
 bot.tree.add_command(birthday_group)
 bot.tree.add_command(qotd_group)
 bot.tree.add_command(sticky_group)
@@ -3530,7 +3217,23 @@ bot.tree.add_command(voice_group)
 bot.tree.add_command(logging_group)
 bot.tree.add_command(welcome_group)
 
+bot.tree.add_command(active_group)
+bot.tree.add_command(join_group)
+bot.tree.add_command(prize_group)
+bot.tree.add_command(deadchat_group)
+bot.tree.add_command(plague_group)
+bot.tree.add_command(prizes_group)
+bot.tree.add_command(timezone_group)
+bot.tree.add_command(status_group)
+bot.tree.add_command(birthday_group)
+bot.tree.add_command(qotd_group)
+bot.tree.add_command(sticky_group)
+bot.tree.add_command(autodelete_group)
+bot.tree.add_command(voice_group)
+bot.tree.add_command(welcome_group)
+bot.tree.add_command(welcome_cfg_group)
 
+bot.tree.add_command(logging_group)
 ############### ON_READY & BOT START ###############
 @bot.event
 async def on_ready():
