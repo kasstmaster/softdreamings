@@ -142,6 +142,11 @@ LEGACY_IMPORT_LOCK = asyncio.Lock()
 ############### HELPER FUNCTIONS ###############
 
 MIGRATIONS = [
+    ("2025_12_13_add_created_at_movie_pool_picks", [
+        "ALTER TABLE IF EXISTS movie_pool_picks ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ;",
+        "ALTER TABLE IF EXISTS movie_pool_picks ALTER COLUMN created_at SET DEFAULT NOW();",
+    ]),
+
     ("2025_12_13_add_legacy_cols_prizes", [
         "ALTER TABLE IF EXISTS prize_definitions ADD COLUMN IF NOT EXISTS legacy_source TEXT;",
         "ALTER TABLE IF EXISTS prize_definitions ADD COLUMN IF NOT EXISTS legacy_id TEXT;",
