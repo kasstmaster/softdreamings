@@ -813,11 +813,20 @@ def guild_now(guild_tz: str) -> datetime:
         tz = ZoneInfo("America/Los_Angeles")
     return datetime.now(tz=tz)
 
+async def ensure_guild_settings_schema():
+    await db_execute(
+        """
+        ALTER TABLE guild_settings
+        ADD COLUMN IF NOT EXISTS birthday_message_id BIGINT;
+        """
+    )
+
 async def init_db():
     global db_pool
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is missing")
     db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
+    await ensure_guild_settings_schema()
     async with db_pool.acquire() as conn:
         await conn.execute("SET TIME ZONE 'UTC';")
         await conn.execute(GUILD_SETTINGS_SQL)
