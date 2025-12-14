@@ -9,7 +9,8 @@ DATABASE_URL  = os.getenv("DATABASE_URL")
 DATABASE_SSL = os.getenv("DATABASE_SSL", "").strip().lower()  # "", "require"
 
 # Optional: dev helpers
-DEV_GUILD_ID = int(os.getenv("DEV_GUILD_ID", "0") or "0") or None
+_raw = (os.getenv("DEV_GUILD_ID") or "").strip()
+DEV_GUILD_IDS = [int(x.strip()) for x in _raw.split(",") if x.strip().isdigit()]
 
 # Default templates/messages (override per-guild in DB where applicable)
 MSG = {
