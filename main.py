@@ -1,13 +1,18 @@
 ############### IMPORTS ###############
 import os
 import asyncio
+import logging
 import uuid
+import json
+import datetime
 from datetime import datetime, timedelta, date, time
 from zoneinfo import ZoneInfo
+from urllib.parse import quote_plus
+
 import asyncpg
 import discord
-from discord.ext import commands
-from urllib.parse import quote_plus
+from discord import app_commands
+from discord.ext import commands, tasks
 
 ############### MESSAGE TEMPLATES ###############
 MSG = {
@@ -34,6 +39,7 @@ MSG = {
 ############### CONSTANTS & CONFIG ###############
 DATABASE_URL = os.getenv("DATABASE_URL")
 TOKEN = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
+BOT_TIMEZONE = os.getenv("BOT_TIMEZONE", "UTC")
 
 # Only allow certain actions in these guild(s)
 DEV_GUILD_IDS = {
@@ -111,8 +117,14 @@ PRIZE_TIME_CHOICES = [
     discord.app_commands.Choice(name="21:00", value="21:00"),
 ]
 
+if not TOKEN:
+    raise RuntimeError("Missing DISCORD_TOKEN / TOKEN env var")
+
+if not DATABASE_URL:
+    raise RuntimeError("Missing DATABASE_URL env var")
+
+
 ############### GLOBAL STATE / STORAGE ###############
-db_pool = None
 active_cleanup_task = None
 plague_cleanup_task = None
 deadchat_cleanup_task = None
@@ -120,7 +132,62 @@ birthday_task = None
 qotd_task = None
 deadchat_locks = {}
 
+db_pool: asyncpg.Pool | None = None
+
+LEGACY_CACHE = {
+    "birthdays": None,
+    "pool_data": None,
+    "sticky_data": None,
+    "deadchat_data": None,
+    "deadchat_state": None,
+    "activity_data": None,
+    "config_data": None,
+    "prize_steam_data": None,
+    "prize_other_data": None,
+}
+
+LEGACY_IMPORT_LOCK = asyncio.Lock()
+
 ############### HELPER FUNCTIONS ###############
+
+MIGRATIONS = [
+    ("2025_12_13_add_picked_at_movie_pool_picks", [
+        "ALTER TABLE IF EXISTS movie_pool_picks ADD COLUMN IF NOT EXISTS picked_at TIMESTAMPTZ;",
+        "ALTER TABLE IF EXISTS movie_pool_picks ALTER COLUMN picked_at SET DEFAULT NOW();",
+    ]),
+    ("2025_12_13_add_text_sticky_messages", [
+        "ALTER TABLE IF EXISTS sticky_messages ADD COLUMN IF NOT EXISTS text TEXT;",
+    ]),
+    ("2025_12_13_add_legacy_id_prizes_steam", [
+        "CREATE EXTENSION IF NOT EXISTS pgcrypto;",
+        "ALTER TABLE IF EXISTS prizes_steam ADD COLUMN IF NOT EXISTS legacy_id TEXT;",
+        "ALTER TABLE IF EXISTS prizes_steam ALTER COLUMN id SET DEFAULT gen_random_uuid();",
+    ]),
+]
+
+async def run_migrations(pool: asyncpg.Pool) -> None:
+    async with pool.acquire() as conn:
+        await conn.execute(
+            "CREATE TABLE IF NOT EXISTS bot_migrations ("
+            "id TEXT PRIMARY KEY,"
+            "applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
+            ");"
+        )
+        rows = await conn.fetch("SELECT id FROM bot_migrations;")
+        applied = {r["id"] for r in rows}
+
+        for mig_id, statements in MIGRATIONS:
+            if mig_id in applied:
+                continue
+            async with conn.transaction():
+                for sql in statements:
+                    await conn.execute(sql)
+                await conn.execute("INSERT INTO bot_migrations (id) VALUES ($1);", mig_id)
+
+async def get_db() -> asyncpg.Pool:
+    if db_pool is None:
+        raise RuntimeError("db_pool is not initialized")
+    return db_pool
 
 GUILD_SETTINGS_SQL = """
 CREATE TABLE IF NOT EXISTS guild_settings (
