@@ -3515,28 +3515,22 @@ async def welcome_config_cmd(
 # =========================
 # Register these groups
 # =========================
-bot.tree.add_command(birthday_group)
-bot.tree.add_command(qotd_group)
-bot.tree.add_command(sticky_group)
-bot.tree.add_command(autodelete_group)
-bot.tree.add_command(voice_group)
-bot.tree.add_command(logging_group)
-bot.tree.add_command(welcome_group)
-
 bot.tree.add_command(active_group)
 bot.tree.add_command(deadchat_group)
 bot.tree.add_command(plague_group)
 bot.tree.add_command(prizes_group)
 bot.tree.add_command(timezone_group)
 bot.tree.add_command(status_group)
+
 bot.tree.add_command(birthday_group)
 bot.tree.add_command(qotd_group)
 bot.tree.add_command(sticky_group)
 bot.tree.add_command(autodelete_group)
 bot.tree.add_command(voice_group)
+bot.tree.add_command(logging_group)
 bot.tree.add_command(welcome_group)
 
-bot.tree.add_command(logging_group)
+
 ############### ON_READY & BOT START ###############
 @bot.event
 async def on_ready():
