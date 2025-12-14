@@ -3524,8 +3524,6 @@ bot.tree.add_command(logging_group)
 bot.tree.add_command(welcome_group)
 
 bot.tree.add_command(active_group)
-bot.tree.add_command(join_group)
-bot.tree.add_command(prize_group)
 bot.tree.add_command(deadchat_group)
 bot.tree.add_command(plague_group)
 bot.tree.add_command(prizes_group)
@@ -3537,7 +3535,6 @@ bot.tree.add_command(sticky_group)
 bot.tree.add_command(autodelete_group)
 bot.tree.add_command(voice_group)
 bot.tree.add_command(welcome_group)
-bot.tree.add_command(welcome_cfg_group)
 
 bot.tree.add_command(logging_group)
 ############### ON_READY & BOT START ###############
