@@ -312,6 +312,13 @@ CREATE TABLE IF NOT EXISTS birthday_announce_log (
 );
 """
 
+MOVIE_POOL_STATE_ALTERS_SQL = """
+ALTER TABLE movie_pool_state
+  ADD COLUMN IF NOT EXISTS channel_id BIGINT NULL,
+  ADD COLUMN IF NOT EXISTS message_id BIGINT NULL,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+"""
+
 STICKY_MESSAGES_SQL = """
 CREATE TABLE IF NOT EXISTS sticky_messages (
   guild_id BIGINT NOT NULL,
@@ -705,6 +712,8 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
 
     guild_id = interaction.guild.id
 
+    await db_execute(MOVIE_POOL_STATE_ALTERS_SQL)
+
     # ---- Birthdays ----
     birthdays = parsed.get("birthdays")
     if birthdays:
@@ -876,6 +885,7 @@ async def init_db():
         await conn.execute(QOTD_HISTORY_SQL)
         await conn.execute(MOVIE_POOL_PICKS_SQL)
         await conn.execute(MOVIE_POOL_STATE_SQL)
+        await conn.execute(MOVIE_POOL_STATE_ALTERS_SQL)
 
         # --- Then alter/extend schema last ---
         await conn.execute(SCHEMA_ALTERS_SQL)
