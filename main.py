@@ -147,6 +147,19 @@ MIGRATIONS = [
         "ALTER TABLE IF EXISTS movie_pool_picks ALTER COLUMN created_at SET DEFAULT NOW();",
     ]),
 
+    ("2025_12_13_add_title_norm_movie_pool_picks", [
+        "ALTER TABLE IF EXISTS movie_pool_picks ADD COLUMN IF NOT EXISTS title_norm TEXT;",
+        r"""
+        UPDATE movie_pool_picks
+        SET title_norm = regexp_replace(
+            regexp_replace(lower(trim(title)), '\s+', ' ', 'g'),
+            '[^a-z0-9 ]+', '', 'g'
+        )
+        WHERE title_norm IS NULL;
+        """,
+        "ALTER TABLE IF EXISTS movie_pool_picks ALTER COLUMN title_norm SET NOT NULL;",
+    ]),
+
     ("2025_12_13_add_unique_movie_pool_picks_v2", [
         "CREATE UNIQUE INDEX IF NOT EXISTS movie_pool_picks_unique_idx "
         "ON movie_pool_picks (guild_id, user_id, title_norm);",
@@ -435,8 +448,9 @@ CREATE TABLE IF NOT EXISTS movie_pool_picks (
   guild_id BIGINT NOT NULL,
   user_id BIGINT NOT NULL,
   title TEXT NOT NULL,
+  title_norm TEXT NOT NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  UNIQUE (guild_id, user_id, title)
+  UNIQUE (guild_id, user_id, title_norm)
 );
 """
 
@@ -4033,19 +4047,37 @@ async def ensure_movie_tables():
             updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         """)
+
+        # Canonical movie pool table (supports ON CONFLICT (guild_id, user_id, title_norm))
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS movie_pool_picks (
             guild_id BIGINT NOT NULL,
             user_id BIGINT NOT NULL,
             title TEXT NOT NULL,
-            added_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-            PRIMARY KEY (guild_id, lower(title))
+            title_norm TEXT,
+            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+        """)
+        # Ensure title_norm exists/backfilled for older installs
+        await conn.execute("ALTER TABLE IF EXISTS movie_pool_picks ADD COLUMN IF NOT EXISTS title_norm TEXT;")
+        await conn.execute(r"""
+        UPDATE movie_pool_picks
+        SET title_norm = regexp_replace(
+            regexp_replace(lower(trim(title)), '\s+', ' ', 'g'),
+            '[^a-z0-9 ]+', '', 'g'
+        )
+        WHERE title_norm IS NULL;
+        """)
+        await conn.execute("ALTER TABLE IF EXISTS movie_pool_picks ALTER COLUMN title_norm SET NOT NULL;")
+        await conn.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS movie_pool_picks_unique_idx
+        ON movie_pool_picks (guild_id, user_id, title_norm);
         """)
         await conn.execute("""
         CREATE INDEX IF NOT EXISTS idx_movie_pool_picks_guild_user
         ON movie_pool_picks (guild_id, user_id);
         """)
+
         await conn.execute("""
         CREATE TABLE IF NOT EXISTS movie_library_items (
             guild_id BIGINT NOT NULL,
@@ -4076,6 +4108,7 @@ async def ensure_movie_tables():
             picked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
         """)
+
 
 async def movie_get_settings(guild_id: int) -> dict:
     await ensure_movie_tables()
@@ -4112,8 +4145,8 @@ async def movie_pool_add(guild_id: int, user_id: int, title: str) -> tuple[bool,
     limit = int(settings.get("per_user_limit") or 3)
     async with db_pool.acquire() as conn:
         existing = await conn.fetchrow(
-            "SELECT 1 FROM movie_pool_picks WHERE guild_id=$1 AND lower(title)=lower($2)",
-            guild_id, title
+            "SELECT 1 FROM movie_pool_picks WHERE guild_id=$1 AND user_id=$2 AND title_norm=$3",
+            guild_id, user_id, normalize_title(title)
         )
         if existing:
             return False, "duplicate"
@@ -4124,8 +4157,8 @@ async def movie_pool_add(guild_id: int, user_id: int, title: str) -> tuple[bool,
         if cnt is not None and int(cnt) >= limit:
             return False, "limit"
         await conn.execute(
-            "INSERT INTO movie_pool_picks (guild_id, user_id, title) VALUES ($1, $2, $3)",
-            guild_id, user_id, title
+            "INSERT INTO movie_pool_picks (guild_id, user_id, title, title_norm) VALUES ($1, $2, $3, $4)",
+            guild_id, user_id, title, normalize_title(title)
         )
     return True, ""
 
@@ -4134,8 +4167,8 @@ async def movie_pool_remove(guild_id: int, user_id: int, title: str) -> bool:
     title = _norm_title(title)
     async with db_pool.acquire() as conn:
         res = await conn.execute(
-            "DELETE FROM movie_pool_picks WHERE guild_id=$1 AND user_id=$2 AND lower(title)=lower($3)",
-            guild_id, user_id, title
+            "DELETE FROM movie_pool_picks WHERE guild_id=$1 AND user_id=$2 AND title_norm=$3",
+            guild_id, user_id, normalize_title(title)
         )
     try:
         n = int(res.split()[-1])
@@ -4147,7 +4180,7 @@ async def movie_pool_list(guild_id: int) -> list[dict]:
     await ensure_movie_tables()
     async with db_pool.acquire() as conn:
         rows = await conn.fetch(
-            "SELECT guild_id, user_id, title, added_at FROM movie_pool_picks WHERE guild_id=$1",
+            "SELECT guild_id, user_id, title, created_at AS added_at FROM movie_pool_picks WHERE guild_id=$1",
             guild_id
         )
     return [dict(r) for r in rows]
