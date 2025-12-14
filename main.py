@@ -971,9 +971,7 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
                         INSERT INTO movie_pool_picks (guild_id, user_id, title, title_norm, created_at, updated_at)
                         VALUES ($1, $2, $3, $4, NOW(), NOW())
                         ON CONFLICT (guild_id, user_id, title_norm)
-                        DO UPDATE SET
-                            title = EXCLUDED.title,
-                            updated_at = NOW()
+                        DO UPDATE SET title = EXCLUDED.title, updated_at = NOW()
                         """,
                         guild_id,
                         int(user_id),
@@ -983,7 +981,12 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
                     imported += 1
                 except Exception as e:
                     result["errors"].append(f"movie_pool entry {row!r}: {e}")
+
             result["imported"]["movie_pool_picks"] = imported
+            result["imported"]["movie_pool_state"] = 1
+
+        except Exception as e:
+            result["errors"].append(f"movie_pool: {e}")
 
     stickies = parsed.get("stickies")
     if isinstance(stickies, dict) and stickies:
