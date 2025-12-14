@@ -121,6 +121,7 @@ qotd_task = None
 deadchat_locks = {}
 
 ############### HELPER FUNCTIONS ###############
+
 GUILD_SETTINGS_SQL = """
 CREATE TABLE IF NOT EXISTS guild_settings (
   guild_id BIGINT PRIMARY KEY,
@@ -429,7 +430,7 @@ async def run_test_all(interaction: discord.Interaction) -> tuple[str, list[str]
     channel = interaction.channel
     guild_id = int(guild.id)
 
-    lines = []
+    lines: list[str] = []
 
     ok_token = bool(TOKEN)
     lines.append(fmt(ok_token, "Token present"))
@@ -519,7 +520,7 @@ async def run_test_all(interaction: discord.Interaction) -> tuple[str, list[str]
     cmd_count = len(bot.tree.get_commands())
     lines.append(fmt(cmd_count > 0, "Slash commands registered", f"count={cmd_count}"))
 
-    summary_ok = all(l.startswith("✅") for l in lines if "missing:" in l or l.startswith("✅") or l.startswith("❌"))
+    summary_ok = all(l.startswith("✅") for l in lines)
     title = "✅ TEST ALL PASSED" if summary_ok else "⚠️ TEST ALL FOUND ISSUES"
     return (title, lines)
 
@@ -527,7 +528,6 @@ def require_guild(interaction: discord.Interaction) -> int:
     if interaction.guild is None:
         raise RuntimeError("This command must be used in a server.")
     return interaction.guild.id
-
 
 async def require_dev_guild(interaction: discord.Interaction) -> bool:
     """Return True only if the interaction happened in an allowed developer guild."""
@@ -558,7 +558,6 @@ async def require_dev_guild(interaction: discord.Interaction) -> bool:
         return False
 
     return True
-
 
 async def run_legacy_preview(interaction: discord.Interaction) -> dict:
     """Read legacy *_DATA messages from the legacy storage channel and return parsed objects."""
@@ -634,7 +633,7 @@ async def run_legacy_preview(interaction: discord.Interaction) -> dict:
 
     parsed: dict = {}
 
-    # Birthdays JSON message (your first storage message: plain JSON)
+    # Birthdays JSON message (plain JSON)
     b = raw.get("BIRTHDAYS_JSON")
     if isinstance(b, dict):
         payload = b.get(str(guild_id)) or b.get(guild_id)
@@ -649,7 +648,7 @@ async def run_legacy_preview(interaction: discord.Interaction) -> dict:
                     "message_id": int(pm["message_id"]),
                 }
 
-    # Movie pool: POOL_DATA:{guild:{entries:[[uid,title],...], message:{...}}}
+    # Movie pool
     pool = raw.get("POOL_DATA")
     if isinstance(pool, dict):
         payload = pool.get(str(guild_id)) or pool.get(guild_id)
@@ -667,17 +666,17 @@ async def run_legacy_preview(interaction: discord.Interaction) -> dict:
             if parsed_pool:
                 parsed["movie_pool"] = parsed_pool
 
-    # Stickies: STICKY_DATA:{channel_id:{text:"...", message_id:...}}
+    # Stickies
     stickies = raw.get("STICKY_DATA")
     if isinstance(stickies, dict):
         parsed["stickies"] = stickies
 
-    # Activity: ACTIVITY_DATA:{user_id:"iso timestamp", ...}
+    # Activity
     activity = raw.get("ACTIVITY_DATA")
     if isinstance(activity, dict):
         parsed["activity"] = activity
 
-    # (Optional for later) Config: CONFIG_DATA:{guild_id:{...}}
+    # Config (optional)
     cfg = raw.get("CONFIG_DATA")
     if isinstance(cfg, dict):
         payload = cfg.get(str(guild_id)) or cfg.get(guild_id)
@@ -685,7 +684,6 @@ async def run_legacy_preview(interaction: discord.Interaction) -> dict:
             parsed["config"] = payload
 
     result["parsed"] = parsed
-    
     return result
 
 async def db_execute(sql: str, *args):
@@ -700,10 +698,7 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
     Import legacy *_DATA messages from the legacy storage channel into Postgres.
     Uses UPSERTs only. No deletes.
     """
-    result = {
-        "imported": {},
-        "errors": []
-    }
+    result = {"imported": {}, "errors": []}
 
     data = await run_legacy_preview(interaction)
     parsed = data.get("parsed", {})
@@ -711,30 +706,30 @@ async def run_legacy_import(interaction: discord.Interaction) -> dict:
     guild_id = interaction.guild.id
 
     # ---- Birthdays ----
-birthdays = parsed.get("birthdays")
-if birthdays:
-    for user_id, mmdd in birthdays.items():
-        try:
-            parts = str(mmdd).strip().split("-")
-            if len(parts) != 2:
-                raise RuntimeError(f"Invalid MM-DD: {mmdd!r}")
-            month = int(parts[0])
-            day = int(parts[1])
+    birthdays = parsed.get("birthdays")
+    if birthdays:
+        for user_id, mmdd in birthdays.items():
+            try:
+                parts = str(mmdd).strip().split("-")
+                if len(parts) != 2:
+                    raise RuntimeError(f"Invalid MM-DD: {mmdd!r}")
+                month = int(parts[0])
+                day = int(parts[1])
 
-            await db_execute(
-                """
-                INSERT INTO birthdays (guild_id, user_id, month, day, year, set_by_user_id, updated_at)
-                VALUES ($1, $2, $3, $4, NULL, NULL, NOW())
-                ON CONFLICT (guild_id, user_id)
-                DO UPDATE SET month = EXCLUDED.month,
-                              day = EXCLUDED.day,
-                              updated_at = NOW()
-                """,
-                guild_id, int(user_id), month, day
-            )
-        except Exception as e:
-            result["errors"].append(f"birthday {user_id}: {e}")
-    result["imported"]["birthdays"] = len(birthdays)
+                await db_execute(
+                    """
+                    INSERT INTO birthdays (guild_id, user_id, month, day, year, set_by_user_id, updated_at)
+                    VALUES ($1, $2, $3, $4, NULL, NULL, NOW())
+                    ON CONFLICT (guild_id, user_id)
+                    DO UPDATE SET month = EXCLUDED.month,
+                                  day = EXCLUDED.day,
+                                  updated_at = NOW()
+                    """,
+                    guild_id, int(user_id), month, day
+                )
+            except Exception as e:
+                result["errors"].append(f"birthday {user_id}: {e}")
+        result["imported"]["birthdays"] = len(birthdays)
 
     # ---- Birthday public message ----
     bpm = parsed.get("birthday_public_message")
@@ -778,7 +773,8 @@ if birthdays:
                 VALUES ($1, $2, $3)
                 ON CONFLICT (guild_id)
                 DO UPDATE SET channel_id = EXCLUDED.channel_id,
-                              message_id = EXCLUDED.message_id
+                              message_id = EXCLUDED.message_id,
+                              updated_at = NOW()
                 """,
                 guild_id, msg["channel_id"], msg["message_id"]
             )
@@ -794,12 +790,13 @@ if birthdays:
                 VALUES ($1, $2, $3, $4)
                 ON CONFLICT (guild_id, channel_id)
                 DO UPDATE SET content = EXCLUDED.content,
-                              message_id = EXCLUDED.message_id
+                              message_id = EXCLUDED.message_id,
+                              updated_at = NOW()
                 """,
                 guild_id,
                 int(channel_id),
                 info["text"],
-                info["message_id"]
+                info.get("message_id")
             )
         result["imported"]["stickies"] = len(stickies)
 
@@ -819,6 +816,7 @@ if birthdays:
         result["imported"]["activity"] = len(activity)
 
     return result
+
 
 def parse_date_yyyy_mm_dd(s: str) -> date:
     parts = (s or "").strip().split("-")
@@ -845,22 +843,6 @@ def guild_now(guild_tz: str) -> datetime:
     except Exception:
         tz = ZoneInfo("America/Los_Angeles")
     return datetime.now(tz=tz)
-
-async def ensure_guild_settings_schema():
-    await db_execute(
-        """
-        ALTER TABLE guild_settings
-        ADD COLUMN IF NOT EXISTS birthday_message_id BIGINT;
-        """
-    )
-
-async def ensure_movie_pool_state_schema():
-    await db_execute(
-        """
-        ALTER TABLE movie_pool_state
-        ADD COLUMN IF NOT EXISTS channel_id BIGINT;
-        """
-    )
 
 async def init_db():
     global db_pool
@@ -892,8 +874,6 @@ async def init_db():
         await conn.execute(AUTODELETE_IGNORE_PHRASES_SQL)
         await conn.execute(VOICE_ROLE_LINKS_SQL)
         await conn.execute(QOTD_HISTORY_SQL)
-
-        # --- Movie pool tables you were missing ---
         await conn.execute(MOVIE_POOL_PICKS_SQL)
         await conn.execute(MOVIE_POOL_STATE_SQL)
 
@@ -916,7 +896,10 @@ def get_deadchat_lock(guild_id: int, channel_id: int) -> asyncio.Lock:
 
 async def ensure_guild_row(guild_id: int) -> None:
     async with db_pool.acquire() as conn:
-        await conn.execute("INSERT INTO guild_settings (guild_id) VALUES ($1) ON CONFLICT (guild_id) DO NOTHING;", guild_id)
+        await conn.execute(
+            "INSERT INTO guild_settings (guild_id) VALUES ($1) ON CONFLICT (guild_id) DO NOTHING;",
+            guild_id
+        )
 
 async def get_guild_settings(guild_id: int) -> dict:
     await ensure_guild_row(guild_id)
@@ -933,16 +916,22 @@ async def get_guild_settings(guild_id: int) -> dict:
             """,
             guild_id,
         )
+
     return {
         "active_role_id": row["active_role_id"],
         "active_threshold_minutes": int(row["active_threshold_minutes"]),
         "active_mode": row["active_mode"] or "all",
+
         "deadchat_role_id": row["deadchat_role_id"],
         "deadchat_idle_minutes": int(row["deadchat_idle_minutes"]),
         "deadchat_requires_active": bool(row["deadchat_requires_active"]),
         "deadchat_cooldown_minutes": int(row["deadchat_cooldown_minutes"]),
+
         "plague_role_id": row["plague_role_id"],
         "plague_duration_hours": int(row["plague_duration_hours"]),
+        "plague_enabled": bool(row["plague_enabled"]),
+        "plague_scheduled_day": row["plague_scheduled_day"],
+
         "prizes_enabled": bool(row["prizes_enabled"]),
         "timezone": row["timezone"] or "America/Los_Angeles",
     }
@@ -1008,15 +997,24 @@ async def set_active_mode(guild_id: int, mode: str) -> None:
 
 async def add_activity_channel(guild_id: int, channel_id: int) -> None:
     async with db_pool.acquire() as conn:
-        await conn.execute("INSERT INTO activity_channels (guild_id, channel_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;", guild_id, channel_id)
+        await conn.execute(
+            "INSERT INTO activity_channels (guild_id, channel_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;",
+            guild_id, channel_id
+        )
 
 async def remove_activity_channel(guild_id: int, channel_id: int) -> None:
     async with db_pool.acquire() as conn:
-        await conn.execute("DELETE FROM activity_channels WHERE guild_id = $1 AND channel_id = $2;", guild_id, channel_id)
+        await conn.execute(
+            "DELETE FROM activity_channels WHERE guild_id = $1 AND channel_id = $2;",
+            guild_id, channel_id
+        )
 
 async def list_activity_channels(guild_id: int) -> list[int]:
     async with db_pool.acquire() as conn:
-        rows = await conn.fetch("SELECT channel_id FROM activity_channels WHERE guild_id = $1 ORDER BY channel_id ASC;", guild_id)
+        rows = await conn.fetch(
+            "SELECT channel_id FROM activity_channels WHERE guild_id = $1 ORDER BY channel_id ASC;",
+            guild_id
+        )
     return [int(r["channel_id"]) for r in rows]
 
 async def record_activity(guild_id: int, user_id: int) -> None:
@@ -1037,7 +1035,10 @@ async def should_count_activity_message(guild_id: int, channel_id: int) -> bool:
     if settings["active_mode"] == "all":
         return True
     async with db_pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM activity_channels WHERE guild_id = $1 AND channel_id = $2;", guild_id, channel_id)
+        exists = await conn.fetchval(
+            "SELECT 1 FROM activity_channels WHERE guild_id = $1 AND channel_id = $2;",
+            guild_id, channel_id
+        )
     return bool(exists)
 
 async def maybe_apply_active_role(member: discord.Member) -> None:
@@ -1180,7 +1181,10 @@ async def add_deadchat_channel(guild_id: int, channel_id: int, idle_minutes_over
 
 async def remove_deadchat_channel(guild_id: int, channel_id: int) -> None:
     async with db_pool.acquire() as conn:
-        await conn.execute("DELETE FROM deadchat_channels WHERE guild_id = $1 AND channel_id = $2;", guild_id, channel_id)
+        await conn.execute(
+            "DELETE FROM deadchat_channels WHERE guild_id = $1 AND channel_id = $2;",
+            guild_id, channel_id
+        )
 
 async def list_deadchat_channels(guild_id: int) -> list[dict]:
     async with db_pool.acquire() as conn:
@@ -1235,7 +1239,12 @@ async def deadchat_get_state(guild_id: int, channel_id: int) -> dict:
             channel_id,
         )
     if not row:
-        return {"last_message_at": now_utc(), "current_holder_user_id": None, "last_award_at": None, "last_award_message_id": None}
+        return {
+            "last_message_at": now_utc(),
+            "current_holder_user_id": None,
+            "last_award_at": None,
+            "last_award_message_id": None
+        }
     return {
         "last_message_at": row["last_message_at"],
         "current_holder_user_id": row["current_holder_user_id"],
@@ -1318,7 +1327,6 @@ async def plague_set_duration(guild_id: int, hours: int) -> None:
             hours,
         )
 
-
 async def plague_set_enabled(guild_id: int, enabled: bool) -> None:
     await ensure_guild_row(guild_id)
     async with db_pool.acquire() as conn:
@@ -1365,17 +1373,26 @@ async def plague_remove_day(guild_id: int, day: date) -> None:
 
 async def plague_list_days(guild_id: int) -> list[date]:
     async with db_pool.acquire() as conn:
-        rows = await conn.fetch("SELECT day FROM plague_days WHERE guild_id = $1 AND enabled = TRUE ORDER BY day ASC;", guild_id)
+        rows = await conn.fetch(
+            "SELECT day FROM plague_days WHERE guild_id = $1 AND enabled = TRUE ORDER BY day ASC;",
+            guild_id
+        )
     return [r["day"] for r in rows]
 
 async def plague_is_day(guild_id: int, day: date) -> bool:
     async with db_pool.acquire() as conn:
-        value = await conn.fetchval("SELECT 1 FROM plague_days WHERE guild_id = $1 AND day = $2 AND enabled = TRUE;", guild_id, day)
+        value = await conn.fetchval(
+            "SELECT 1 FROM plague_days WHERE guild_id = $1 AND day = $2 AND enabled = TRUE;",
+            guild_id, day
+        )
     return bool(value)
 
 async def plague_daily_already_triggered(guild_id: int, day: date) -> bool:
     async with db_pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT infected_user_id FROM plague_daily_state WHERE guild_id = $1 AND day = $2;", guild_id, day)
+        row = await conn.fetchrow(
+            "SELECT infected_user_id FROM plague_daily_state WHERE guild_id = $1 AND day = $2;",
+            guild_id, day
+        )
     return bool(row and row["infected_user_id"])
 
 async def plague_mark_triggered(guild_id: int, day: date, user_id: int) -> None:
@@ -1513,7 +1530,13 @@ async def prize_get_definition(guild_id: int, prize_id: uuid.UUID) -> dict | Non
         )
     if not row:
         return None
-    return {"prize_id": row["prize_id"], "title": row["title"], "description": row["description"], "image_url": row["image_url"], "enabled": bool(row["enabled"])}
+    return {
+        "prize_id": row["prize_id"],
+        "title": row["title"],
+        "description": row["description"],
+        "image_url": row["image_url"],
+        "enabled": bool(row["enabled"])
+    }
 
 async def prize_schedule_add(guild_id: int, day: date, not_before: time | None, channel_id: int, prize_id: uuid.UUID) -> uuid.UUID:
     sid = uuid.uuid4()
@@ -1580,7 +1603,12 @@ async def prize_find_available_schedule_for_today(guild_id: int, day: date, loca
     nbt = row["not_before_time"]
     if nbt is not None and local_time < nbt:
         return None
-    return {"schedule_id": row["schedule_id"], "not_before_time": nbt, "channel_id": int(row["channel_id"]), "prize_id": row["prize_id"]}
+    return {
+        "schedule_id": row["schedule_id"],
+        "not_before_time": nbt,
+        "channel_id": int(row["channel_id"]),
+        "prize_id": row["prize_id"],
+    }
 
 async def prize_mark_used(guild_id: int, schedule_id: uuid.UUID) -> None:
     async with db_pool.acquire() as conn:
@@ -1656,49 +1684,61 @@ async def deadchat_attempt_award(bot: commands.Bot, message: discord.Message) ->
         return
     if not isinstance(message.author, discord.Member):
         return
+
     guild_id = int(message.guild.id)
     channel_id = int(message.channel.id)
+
     cfg = await get_deadchat_channel_config(guild_id, channel_id)
     if not cfg or not cfg["enabled"]:
         await deadchat_update_last_message(guild_id, channel_id)
         return
+
     settings = await get_guild_settings(guild_id)
     role_id = settings["deadchat_role_id"]
     if not role_id:
         await deadchat_update_last_message(guild_id, channel_id)
         return
+
     state = await deadchat_get_state(guild_id, channel_id)
     idle_minutes = int(cfg["idle_minutes"]) if cfg["idle_minutes"] is not None else int(settings["deadchat_idle_minutes"])
     last_msg_at = state["last_message_at"]
     now = now_utc()
+
     is_dead = (now - last_msg_at) >= timedelta(minutes=idle_minutes)
     await deadchat_update_last_message(guild_id, channel_id)
     if not is_dead:
         return
+
     if settings["deadchat_requires_active"]:
         active_role_id = settings["active_role_id"]
         if active_role_id:
             active_role = message.guild.get_role(int(active_role_id))
             if active_role and active_role not in message.author.roles:
                 return
+
     cooldown_until = await deadchat_get_user_cooldown_until(guild_id, channel_id, int(message.author.id))
     if cooldown_until and cooldown_until > now:
         return
+
     lock = get_deadchat_lock(guild_id, channel_id)
     async with lock:
         state = await deadchat_get_state(guild_id, channel_id)
         last_msg_at = state["last_message_at"]
         now = now_utc()
+
         is_dead = (now - last_msg_at) >= timedelta(minutes=idle_minutes)
         await deadchat_update_last_message(guild_id, channel_id)
         if not is_dead:
             return
+
         cooldown_until = await deadchat_get_user_cooldown_until(guild_id, channel_id, int(message.author.id))
         if cooldown_until and cooldown_until > now:
             return
+
         deadchat_role = message.guild.get_role(int(role_id))
         if deadchat_role is None:
             return
+
         prev_holder_id = state["current_holder_user_id"]
         if prev_holder_id:
             prev_member = message.guild.get_member(int(prev_holder_id))
@@ -1707,11 +1747,13 @@ async def deadchat_attempt_award(bot: commands.Bot, message: discord.Message) ->
                     await prev_member.remove_roles(deadchat_role, reason="Dead Chat: transferred to new holder")
                 except Exception:
                     pass
+
         if deadchat_role not in message.author.roles:
             try:
                 await message.author.add_roles(deadchat_role, reason="Dead Chat: awarded to channel reviver")
             except Exception:
                 return
+
         old_msg_id = state["last_award_message_id"]
         if old_msg_id:
             try:
@@ -1719,20 +1761,29 @@ async def deadchat_attempt_award(bot: commands.Bot, message: discord.Message) ->
                 await old_msg.delete()
             except Exception:
                 pass
-        text = MSG["deadchat_awarded"]
-        text = format_template(text, message.author)
-        sent = await message.channel.send(text)
+
+        announce_text = MSG["deadchat_awarded"]
+        announce_text = format_template(announce_text, message.author)
+
+        sent = None
         try:
             sent = await message.channel.send(announce_text)
         except Exception:
             sent = None
+
         await deadchat_set_holder(guild_id, channel_id, int(message.author.id), int(sent.id) if sent else None)
+
         cd_minutes = int(settings["deadchat_cooldown_minutes"])
         if cd_minutes > 0:
-            await deadchat_set_user_cooldown(guild_id, channel_id, int(message.author.id), now + timedelta(minutes=cd_minutes))
+            await deadchat_set_user_cooldown(
+                guild_id,
+                channel_id,
+                int(message.author.id),
+                now + timedelta(minutes=cd_minutes)
+            )
+
         await maybe_trigger_plague(message.guild, int(message.author.id), channel_id)
         await maybe_trigger_prize_drop(message.guild, int(message.author.id))
-
 
 async def maybe_trigger_plague(guild: discord.Guild, winner_user_id: int, source_channel_id: int) -> None:
     settings = await get_guild_settings(int(guild.id))
@@ -1826,16 +1877,15 @@ async def plague_cleanup_once(bot: commands.Bot):
             continue
         settings = await get_guild_settings(int(guild.id))
         role_id = settings["plague_role_id"]
-        if role_id:
-            role = guild.get_role(int(role_id))
-        else:
-            role = None
+        role = guild.get_role(int(role_id)) if role_id else None
+
         member = guild.get_member(int(e["user_id"]))
         if member and role and role in member.roles:
             try:
                 await member.remove_roles(role, reason="Plague: infection expired")
             except Exception:
                 pass
+
         await plague_delete_infection(int(guild.id), int(e["user_id"]))
 
 ############### VIEWS / UI COMPONENTS ###############
