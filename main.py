@@ -8,20 +8,8 @@ import asyncpg
 import discord
 from discord.ext import commands
 
-import logging
 ############### CONSTANTS & CONFIG ###############
-
-############### LOGGING ###############
-LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
-logging.basicConfig(
-    level=LOG_LEVEL,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-)
-logger = logging.getLogger("discord_bot")
-
 DATABASE_URL = os.getenv("DATABASE_URL")
-DB_SSL = os.getenv("DB_SSL", "").lower() in {"1", "true", "yes", "require"}
-PGSSLMODE_REQUIRE = os.getenv("PGSSLMODE", "").lower() == "require"
 TOKEN = os.getenv("DISCORD_TOKEN") or os.getenv("TOKEN")
 
 ACTIVE_MODE_CHOICES = [
@@ -510,12 +498,7 @@ async def init_db():
     global db_pool
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is missing")
-    db_pool = await asyncpg.create_pool(
-        DATABASE_URL,
-        min_size=1,
-        max_size=10,
-        ssl="require" if (DB_SSL or PGSSLMODE_REQUIRE) else None,
-    )
+    db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
     async with db_pool.acquire() as conn:
         await conn.execute("SET TIME ZONE 'UTC';")
         await conn.execute(GUILD_SETTINGS_SQL)
@@ -1342,7 +1325,7 @@ async def deadchat_attempt_award(bot: commands.Bot, message: discord.Message) ->
                 try:
                     await prev_member.remove_roles(deadchat_role, reason="Dead Chat: transferred to new holder")
                 except Exception:
-                    logger.exception("Ignored exception")
+                    pass
         if deadchat_role not in message.author.roles:
             try:
                 await message.author.add_roles(deadchat_role, reason="Dead Chat: awarded to channel reviver")
@@ -1354,7 +1337,7 @@ async def deadchat_attempt_award(bot: commands.Bot, message: discord.Message) ->
                 old_msg = await message.channel.fetch_message(int(old_msg_id))
                 await old_msg.delete()
             except Exception:
-                logger.exception("Ignored exception")
+                pass
         announce_text = f"💀 {message.author.mention} revived the chat and stole **Dead Chat**!"
         sent = None
         try:
@@ -1418,7 +1401,7 @@ async def maybe_trigger_plague(guild: discord.Guild, winner_user_id: int, source
         try:
             await channel.send(f"☣️ **Plague Day!** {member.mention} has been infected for **3 days**.")
         except Exception:
-            logger.exception("Ignored exception")
+            pass
 
 async def maybe_trigger_prize_drop(guild: discord.Guild, winner_user_id: int) -> None:
     settings = await get_guild_settings(int(guild.id))
@@ -1444,7 +1427,7 @@ async def maybe_trigger_prize_drop(guild: discord.Guild, winner_user_id: int) ->
         try:
             embed.set_image(url=prize["image_url"])
         except Exception:
-            logger.exception("Ignored exception")
+            pass
     content = f"🎁 Prize Drop! First to claim it wins."
     try:
         msg = await channel.send(content=content, embed=embed, view=view)
@@ -1456,7 +1439,7 @@ async def maybe_trigger_prize_drop(guild: discord.Guild, winner_user_id: int) ->
     try:
         await msg.edit(view=view)
     except Exception:
-        logger.exception("Ignored exception")
+        pass
 
 async def plague_cleanup_once(bot: commands.Bot):
     expired = await plague_get_expired()
@@ -1476,7 +1459,7 @@ async def plague_cleanup_once(bot: commands.Bot):
             try:
                 await member.remove_roles(role, reason="Plague: infection expired")
             except Exception:
-                logger.exception("Ignored exception")
+                pass
         await plague_delete_infection(int(guild.id), int(e["user_id"]))
 
 ############### VIEWS / UI COMPONENTS ###############
@@ -1504,7 +1487,7 @@ class PrizeClaimView(discord.ui.View):
         try:
             await interaction.message.edit(view=self)
         except Exception:
-            logger.exception("Ignored exception")
+            pass
         prize = await prize_get_definition(int(interaction.guild.id), self.prize_id)
         title = prize["title"] if prize else "Prize"
         await interaction.response.send_message(f"✅ You claimed **{title}**!", ephemeral=True)
@@ -1518,11 +1501,11 @@ class PrizeClaimView(discord.ui.View):
                 dest = interaction.channel
             await dest.send(f"🏆 {interaction.user.mention} claimed **{title}**!")
         except Exception:
-            logger.exception("Ignored exception")
+            pass
         try:
             await interaction.user.send(f"✅ You claimed **{title}** in **{interaction.guild.name}**.")
         except Exception:
-            logger.exception("Ignored exception")
+            pass
 
 
 # -------- Enable/Disable + Defaults helpers (added for desired command UX) --------
@@ -1693,7 +1676,7 @@ async def birthday_daily_loop(bot: commands.Bot):
                             if int(m.id) not in {int(b["user_id"]) for b in todays}:
                                 await m.remove_roles(role, reason="Birthday ended")
                     except Exception:
-                        logger.exception("Ignored exception")
+                        pass
 
                 if not todays:
                     await update_birthday_list_message(bot, guild_id)
@@ -1712,18 +1695,18 @@ async def birthday_daily_loop(bot: commands.Bot):
                         try:
                             await member.add_roles(role, reason="Birthday")
                         except Exception:
-                            logger.exception("Ignored exception")
+                            pass
                     if channel:
                         try:
                             if not await birthday_was_announced(guild_id, uid, today):
                                 await channel.send(format_template(msg_t, member))
                                 await birthday_mark_announced(guild_id, uid, today)
                         except Exception:
-                            logger.exception("Ignored exception")
+                            pass
 
                 await update_birthday_list_message(bot, guild_id)
         except Exception:
-            logger.exception("Ignored exception")
+            pass
         await asyncio.sleep(60)
 
 async def update_birthday_list_message(bot: commands.Bot, guild_id: int) -> None:
@@ -1755,7 +1738,7 @@ async def update_birthday_list_message(bot: commands.Bot, guild_id: int) -> None
         embed = discord.Embed(title="🎂 Birthdays", description=desc)
         await msg.edit(embed=embed, content=None)
     except Exception:
-        logger.exception("Ignored exception")
+        pass
 
 async def qotd_daily_loop(bot: commands.Bot):
     last_seen: dict[int, date] = {}
@@ -1814,9 +1797,9 @@ async def qotd_daily_loop(bot: commands.Bot):
                     await qotd_record_post(guild_id, today, pick)
                     last_seen[guild_id] = today
                 except Exception:
-                    logger.exception("Ignored exception")
+                    pass
         except Exception:
-            logger.exception("Ignored exception")
+            pass
         await asyncio.sleep(30)
 
 # -------- Message-level scheduler helpers --------
@@ -1834,7 +1817,7 @@ async def schedule_message_delete(message: discord.Message, delay_seconds: int, 
                     if ch:
                         await ch.send(f"🗑️ Deleted message in <#{message.channel.id}> from {message.author.mention}")
             except Exception:
-                logger.exception("Ignored exception")
+                pass
         finally:
             _autodelete_tasks.pop(key, None)
     t = asyncio.create_task(_job())
@@ -1846,7 +1829,7 @@ async def active_cleanup_loop(bot: commands.Bot):
         try:
             await active_cleanup_once(bot)
         except Exception:
-            logger.exception("Ignored exception")
+            pass
         await asyncio.sleep(60)
 
 async def plague_cleanup_loop(bot: commands.Bot):
@@ -1854,7 +1837,7 @@ async def plague_cleanup_loop(bot: commands.Bot):
         try:
             await plague_cleanup_once(bot)
         except Exception:
-            logger.exception("Ignored exception")
+            pass
         await asyncio.sleep(60)
 
 async def deadchat_cleanup_loop():
@@ -2166,14 +2149,14 @@ async def on_message(message: discord.Message):
             if isinstance(message.author, discord.Member):
                 await maybe_apply_active_role(message.author)
     except Exception:
-        logger.exception("Ignored exception")
+        pass
     try:
         if await deadchat_is_configured(guild_id, channel_id):
             await deadchat_attempt_award(bot, message)
         else:
             await deadchat_update_last_message(guild_id, channel_id)
     except Exception:
-        logger.exception("Ignored exception")
+        pass
 
     # Sticky messages
     try:
@@ -2187,14 +2170,14 @@ async def on_message(message: discord.Message):
                     old_msg = await message.channel.fetch_message(int(old_id))
                     await old_msg.delete()
                 except Exception:
-                    logger.exception("Ignored exception")
+                    pass
             try:
                 new_msg = await message.channel.send(content)
                 await sticky_update_message_id(guild_id, channel_id, int(new_msg.id))
             except Exception:
-                logger.exception("Ignored exception")
+                pass
     except Exception:
-        logger.exception("Ignored exception")
+        pass
 
     # Auto-delete
     try:
@@ -2210,7 +2193,7 @@ async def on_message(message: discord.Message):
             else:
                 await schedule_message_delete(message, int(ad["delete_after_seconds"]), int(ad["log_channel_id"]) if ad["log_channel_id"] else None)
     except Exception:
-        logger.exception("Ignored exception")
+        pass
     await bot.process_commands(message)
 
 
@@ -2230,7 +2213,7 @@ async def on_member_join(member: discord.Member):
                 try:
                     await member.add_roles(role, reason="Auto role for bots")
                 except Exception:
-                    logger.exception("Ignored exception")
+                    pass
         if (not member.bot) and s.get("join_member_roles_enabled", True) and s.get("member_role_id"):
             role = member.guild.get_role(int(s["member_role_id"]))
             if role:
@@ -2240,7 +2223,7 @@ async def on_member_join(member: discord.Member):
                     try:
                         await member.add_roles(role, reason="Delayed member role")
                     except Exception:
-                        logger.exception("Ignored exception")
+                        pass
                 asyncio.create_task(_add_later())
 
         # Welcome message
@@ -2251,7 +2234,7 @@ async def on_member_join(member: discord.Member):
                 try:
                     await ch.send(format_template(txt, member))
                 except Exception:
-                    logger.exception("Ignored exception")
+                    pass
 
         # Log join
         if s.get("logging_enabled") and s.get("modlog_channel_id"):
@@ -2260,9 +2243,9 @@ async def on_member_join(member: discord.Member):
                 try:
                     await ch.send(f"✅ {member.mention} joined. (id: {member.id})")
                 except Exception:
-                    logger.exception("Ignored exception")
+                    pass
     except Exception:
-        logger.exception("Ignored exception")
+        pass
 
 @bot.event
 async def on_member_remove(member: discord.Member):
@@ -2287,14 +2270,14 @@ async def on_member_remove(member: discord.Member):
                     action = "was kicked"
                     break
         except Exception:
-            logger.exception("Ignored exception")
+            pass
 
         msg = f"🚪 {member} {action}."
         if actor:
             msg += f" By {actor}."
         await ch.send(msg)
     except Exception:
-        logger.exception("Ignored exception")
+        pass
 
 @bot.event
 async def on_member_ban(guild: discord.Guild, user: discord.User):
@@ -2312,13 +2295,13 @@ async def on_member_ban(guild: discord.Guild, user: discord.User):
                     actor = entry.user
                     break
         except Exception:
-            logger.exception("Ignored exception")
+            pass
         msg = f"⛔ {user} was banned."
         if actor:
             msg += f" By {actor}."
         await ch.send(msg)
     except Exception:
-        logger.exception("Ignored exception")
+        pass
 
 @bot.event
 async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
@@ -2338,7 +2321,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
                     else:
                         await member.add_roles(role, reason="Left voice channel")
                 except Exception:
-                    logger.exception("Ignored exception")
+                    pass
 
     # Joining a linked channel
     if after.channel and (not before.channel or int(before.channel.id) != int(after.channel.id)):
@@ -2352,7 +2335,7 @@ async def on_voice_state_update(member: discord.Member, before: discord.VoiceSta
                     else:
                         await member.remove_roles(role, reason="Joined voice channel")
                 except Exception:
-                    logger.exception("Ignored exception")
+                    pass
 
 
 ############### COMMAND GROUPS ###############
@@ -3311,8 +3294,6 @@ async def on_app_command_error(
 async def runner():
     if not TOKEN:
         raise RuntimeError("DISCORD_TOKEN or TOKEN is missing")
-    if not DATABASE_URL:
-        raise RuntimeError("DATABASE_URL is missing")
     await init_db()
     try:
         await bot.start(TOKEN)
