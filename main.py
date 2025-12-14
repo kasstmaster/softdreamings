@@ -3094,7 +3094,15 @@ async def config_system_cmd(
     legacy_import: bool | None = None,
 ):
     guild_id = require_guild(interaction)
-    used = _count_set(info=info, timezone_set=timezone_set, timezone_show=timezone_show, ping=ping, health_check=health_check, legacy_preview=legacy_preview, legacy_import=legacy_import,)
+    used = _count_set(
+        info=info,
+        timezone_set=timezone_set,
+        timezone_show=timezone_show,
+        ping=ping,
+        health_check=health_check,
+        legacy_preview=legacy_preview,
+        legacy_import=legacy_import,
+    )
     ok = await _require_one_action(
         interaction,
         used,
@@ -3105,23 +3113,17 @@ async def config_system_cmd(
 
     action = used[0]
 
-    if action in ("health_check", "legacy_preview", "legacy_import"):
-        if not interaction.response.is_done():
-            await interaction.response.defer(ephemeral=True, thinking=True)
-
     if action == "ping":
-        
         if not await require_dev_guild(interaction):
             return
-                await interaction.followup.send(
-            data["summary"],
-            ephemeral=True,
-        )
+        await interaction.response.send_message("pong ✅", ephemeral=True)
         return
 
     if action == "health_check":
         if not await require_dev_guild(interaction):
             return
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True, thinking=True)
         title, lines = await run_test_all(interaction)
         embed = discord.Embed(title=title, description="\n".join(lines))
         await interaction.followup.send(embed=embed, ephemeral=True)
@@ -3130,30 +3132,34 @@ async def config_system_cmd(
     if action == "legacy_preview":
         if not await require_dev_guild(interaction):
             return
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True, thinking=True)
         data = await run_legacy_preview(interaction)
-        await interaction.response.send_message(
+        await interaction.followup.send(
             data["summary"],
             ephemeral=True,
         )
         return
-    
+
     if action == "legacy_import":
         if not await require_dev_guild(interaction):
             return
+        if not interaction.response.is_done():
+            await interaction.response.defer(ephemeral=True, thinking=True)
         data = await run_legacy_import(interaction)
 
         imported = data.get("imported", {}) or {}
         errors = data.get("errors", []) or []
-        
+
         imported_bits = ", ".join(f"{k}={v}" for k, v in imported.items()) if imported else "none"
         summary = (
             "✅ Legacy import complete.\n"
             f"Imported: {imported_bits}\n"
             f"Errors: {len(errors)}"
         )
-        
+
         await interaction.followup.send(summary, ephemeral=True)
-        
+
         import io, json
         full_text = json.dumps(data, indent=2, default=str)
         if len(full_text) > 1800 or errors:
@@ -3164,84 +3170,6 @@ async def config_system_cmd(
                 ephemeral=True,
             )
         return
-
-        lines = []
-        raw = data.get("raw", {})
-        errs = data.get("errors", [])
-
-        b = raw.get("BIRTHDAYS_JSON")
-        if isinstance(b, dict):
-            total_bd = 0
-            for _g, payload in b.items():
-                try:
-                    bd = payload.get("birthdays", {})
-                    total_bd += len(bd) if isinstance(bd, dict) else 0
-                except Exception:
-                    pass
-            lines.append(f"• birthdays: {total_bd}")
-            try:
-                any_payload = next(iter(b.values()))
-                pm = any_payload.get("public_message") if isinstance(any_payload, dict) else None
-                if isinstance(pm, dict) and pm.get("channel_id") and pm.get("message_id"):
-                    lines.append("• birthday public message: present")
-            except Exception:
-                pass
-        else:
-            lines.append("• birthdays: not found")
-
-        pool = raw.get("POOL_DATA")
-        if isinstance(pool, dict):
-            total_entries = 0
-            try:
-                for _g, payload in pool.items():
-                    entries = payload.get("entries", [])
-                    total_entries += len(entries) if isinstance(entries, list) else 0
-            except Exception:
-                pass
-            lines.append(f"• movie pool entries: {total_entries}")
-            try:
-                any_payload = next(iter(pool.values()))
-                msg = any_payload.get("message") if isinstance(any_payload, dict) else None
-                if isinstance(msg, dict) and msg.get("channel_id") and msg.get("message_id"):
-                    lines.append("• pool public message: present")
-            except Exception:
-                pass
-        else:
-            lines.append("• movie pool: not found")
-
-        for key, label in [
-            ("STICKY_DATA", "stickies"),
-            ("DEADCHAT_DATA", "deadchat timestamps"),
-            ("DEADCHAT_STATE", "deadchat state"),
-            ("PLAGUE_DATA", "plague state"),
-            ("ACTIVITY_DATA", "activity data"),
-            ("CONFIG_DATA", "config data"),
-            ("PRIZE_MOVIE_DATA", "prize movie"),
-            ("PRIZE_NITRO_DATA", "prize nitro"),
-            ("PRIZE_STEAM_DATA", "prize steam"),
-            ("MEMBERJOIN_DATA", "member join data"),
-            ("TWITCH_STATE", "twitch state"),
-        ]:
-            val = raw.get(key)
-            if val is None:
-                lines.append(f"• {label}: not found")
-            else:
-                try:
-                    lines.append(f"• {label}: present ({len(val)})")
-                except Exception:
-                    lines.append(f"• {label}: present")
-
-        if errs:
-            lines.append("• errors:")
-            for e in errs[:5]:
-                lines.append(f"  - {e}")
-
-        await interaction.response.send_message(
-            "Legacy preview (no DB writes):\n" + "\n".join(lines),
-            ephemeral=True,
-        )
-        return
-
 
     if action == "timezone_set":
         await upsert_timezone(guild_id, timezone_set)
