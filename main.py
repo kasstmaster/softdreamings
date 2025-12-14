@@ -121,6 +121,7 @@ qotd_task = None
 deadchat_locks = {}
 
 ############### HELPER FUNCTIONS ###############
+
 GUILD_SETTINGS_SQL = """
 CREATE TABLE IF NOT EXISTS guild_settings (
   guild_id BIGINT PRIMARY KEY,
@@ -145,6 +146,7 @@ ALTER TABLE guild_settings
   ADD COLUMN IF NOT EXISTS birthday_enabled BOOLEAN NOT NULL DEFAULT FALSE,
   ADD COLUMN IF NOT EXISTS birthday_role_id BIGINT NULL,
   ADD COLUMN IF NOT EXISTS birthday_channel_id BIGINT NULL,
+  ADD COLUMN IF NOT EXISTS birthday_message_id BIGINT NULL,
   ADD COLUMN IF NOT EXISTS birthday_message_text TEXT NOT NULL DEFAULT '🎉 Happy Birthday {user}! 🎂',
   ADD COLUMN IF NOT EXISTS birthday_list_channel_id BIGINT NULL,
   ADD COLUMN IF NOT EXISTS birthday_list_message_id BIGINT NULL,
@@ -310,6 +312,13 @@ CREATE TABLE IF NOT EXISTS birthday_announce_log (
 );
 """
 
+MOVIE_POOL_STATE_ALTERS_SQL = """
+ALTER TABLE movie_pool_state
+  ADD COLUMN IF NOT EXISTS channel_id BIGINT NULL,
+  ADD COLUMN IF NOT EXISTS message_id BIGINT NULL,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+"""
+
 STICKY_MESSAGES_SQL = """
 CREATE TABLE IF NOT EXISTS sticky_messages (
   guild_id BIGINT NOT NULL,
@@ -359,6 +368,25 @@ CREATE TABLE IF NOT EXISTS qotd_history (
 );
 """
 
+MOVIE_POOL_PICKS_SQL = """
+CREATE TABLE IF NOT EXISTS movie_pool_picks (
+  guild_id BIGINT NOT NULL,
+  user_id BIGINT NOT NULL,
+  title TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (guild_id, user_id, title)
+);
+"""
+
+MOVIE_POOL_STATE_SQL = """
+CREATE TABLE IF NOT EXISTS movie_pool_state (
+  guild_id BIGINT PRIMARY KEY,
+  channel_id BIGINT NULL,
+  message_id BIGINT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+"""
+
 REQUIRED_TABLES = [
     "guild_settings",
     "member_activity",
@@ -372,6 +400,11 @@ REQUIRED_TABLES = [
     "prize_definitions",
     "prize_schedules",
     "prize_drops",
+    "movie_pool_picks",
+    "movie_pool_state",
+    "sticky_messages",
+    "birthdays",
+    "birthday_announce_log",
 ]
 
 async def table_exists(name: str) -> bool:
@@ -404,7 +437,7 @@ async def run_test_all(interaction: discord.Interaction) -> tuple[str, list[str]
     channel = interaction.channel
     guild_id = int(guild.id)
 
-    lines = []
+    lines: list[str] = []
 
     ok_token = bool(TOKEN)
     lines.append(fmt(ok_token, "Token present"))
@@ -494,7 +527,7 @@ async def run_test_all(interaction: discord.Interaction) -> tuple[str, list[str]
     cmd_count = len(bot.tree.get_commands())
     lines.append(fmt(cmd_count > 0, "Slash commands registered", f"count={cmd_count}"))
 
-    summary_ok = all(l.startswith("✅") for l in lines if "missing:" in l or l.startswith("✅") or l.startswith("❌"))
+    summary_ok = all(l.startswith("✅") for l in lines)
     title = "✅ TEST ALL PASSED" if summary_ok else "⚠️ TEST ALL FOUND ISSUES"
     return (title, lines)
 
@@ -502,7 +535,6 @@ def require_guild(interaction: discord.Interaction) -> int:
     if interaction.guild is None:
         raise RuntimeError("This command must be used in a server.")
     return interaction.guild.id
-
 
 async def require_dev_guild(interaction: discord.Interaction) -> bool:
     """Return True only if the interaction happened in an allowed developer guild."""
@@ -536,56 +568,86 @@ async def require_dev_guild(interaction: discord.Interaction) -> bool:
 
 
 async def run_legacy_preview(interaction: discord.Interaction) -> dict:
-    """Read legacy *_DATA messages from the legacy storage channel and return parsed objects."""
-    result: dict = {"raw": {}, "errors": []}
+    """
+    Read legacy storage messages from the legacy storage channel and parse known payloads.
 
+    Returns:
+      {
+        "raw": { "<PREFIX>": <obj>, ... , "BIRTHDAYS_JSON": <obj> },
+        "parsed": { ...per-guild parsed payloads... },
+        "errors": [ ... ],
+        "summary": "human readable summary"
+      }
+    """
+    result: dict = {"raw": {}, "parsed": {}, "errors": []}
+
+    def _try_parse_json(blob: str):
+        try:
+            import json as _json
+            return _json.loads(blob)
+        except Exception as e:
+            return ("__error__", str(e))
+
+    def _guild_payload(obj: dict, guild_id: int):
+        if not isinstance(obj, dict):
+            return None
+        return obj.get(str(guild_id)) or obj.get(guild_id)
+
+    # ---- Fetch storage channel messages ----
     ch = bot.get_channel(LEGACY_STORAGE_CHANNEL_ID)
     if ch is None:
         try:
             ch = await bot.fetch_channel(LEGACY_STORAGE_CHANNEL_ID)
         except Exception as e:
-            result["errors"].append(f"Could not fetch storage channel: {e!r}")
+            result["errors"].append(f"Could not fetch legacy storage channel ({LEGACY_STORAGE_CHANNEL_ID}): {e!r}")
+            result["summary"] = "❌ Could not fetch the legacy storage channel."
             return result
 
     try:
-        history = [m async for m in ch.history(limit=200, oldest_first=False)]
+        history = [m async for m in ch.history(limit=500, oldest_first=False)]
     except Exception as e:
-        result["errors"].append(f"Could not read channel history: {e!r}")
+        result["errors"].append(f"Could not read legacy channel history: {e!r}")
+        result["summary"] = "❌ Could not read message history from the legacy storage channel."
         return result
 
     prefixes = [
+        # Core features
         "POOL_DATA",
         "STICKY_DATA",
-        "MEMBERJOIN_DATA",
-        "PLAGUE_DATA",
+        "ACTIVITY_DATA",
+        "CONFIG_DATA",
+
+        # Dead chat
         "DEADCHAT_DATA",
         "DEADCHAT_STATE",
+
+        # Prizes (older variants seen in backups)
         "PRIZE_MOVIE_DATA",
         "PRIZE_NITRO_DATA",
         "PRIZE_STEAM_DATA",
+        "PRIZE_AMAZON_DATA",
+        "PRIZE_GIFT_CARD_DATA",
+
+        # Other (optional / may be unused in DB)
         "TWITCH_STATE",
-        "ACTIVITY_DATA",
-        "CONFIG_DATA",
+        "PLAGUE_DATA",
+        "MEMBERJOIN_DATA",
     ]
 
-    import json as _json
-
-    def _try_parse_json(blob: str):
-        try:
-            return _json.loads(blob)
-        except Exception as e:
-            return ("__error__", str(e))
-
+    # ---- Parse messages ----
     for m in history:
         content = (m.content or "").strip()
         if not content:
             continue
 
+        # Sometimes birthdays were stored as a single "plain JSON" message (not PREFIX:JSON).
         if content.startswith("{") and content.endswith("}"):
             obj = _try_parse_json(content)
             if not (isinstance(obj, tuple) and obj and obj[0] == "__error__"):
                 try:
-                    if isinstance(obj, dict) and any(isinstance(v, dict) and "birthdays" in v for v in obj.values()):
+                    if isinstance(obj, dict) and any(
+                        isinstance(v, dict) and ("birthdays" in v) for v in obj.values()
+                    ):
                         result["raw"]["BIRTHDAYS_JSON"] = obj
                         continue
                 except Exception:
@@ -604,124 +666,528 @@ async def run_legacy_preview(interaction: discord.Interaction) -> dict:
                     else:
                         result["raw"][pfx] = obj
 
+    guild_id = interaction.guild.id
+    raw = result.get("raw", {}) or {}
+    parsed: dict = {}
+
+    # ---- Birthdays (plain JSON message) ----
+    b = raw.get("BIRTHDAYS_JSON")
+    if isinstance(b, dict):
+        payload = _guild_payload(b, guild_id)
+        if isinstance(payload, dict):
+            bd = payload.get("birthdays")
+            if isinstance(bd, dict):
+                parsed["birthdays"] = bd
+            pm = payload.get("public_message")
+            if isinstance(pm, dict):
+                parsed["birthday_public_message"] = pm
+
+    # ---- Movie pool ----
+    pool = raw.get("POOL_DATA")
+    if isinstance(pool, dict):
+        payload = _guild_payload(pool, guild_id)
+        if isinstance(payload, dict):
+            parsed["movie_pool"] = payload
+
+    # ---- Sticky messages ----
+    stickies = raw.get("STICKY_DATA")
+    if isinstance(stickies, dict):
+        parsed["stickies"] = stickies
+
+    # ---- Dead chat ----
+    deadchat = raw.get("DEADCHAT_DATA")
+    if isinstance(deadchat, dict):
+        parsed["deadchat_last_message_at"] = deadchat
+
+    deadchat_state = raw.get("DEADCHAT_STATE")
+    if isinstance(deadchat_state, dict):
+        payload = _guild_payload(deadchat_state, guild_id)
+        if isinstance(payload, dict):
+            parsed["deadchat_state"] = payload
+
+    # ---- Prizes (schedules) ----
+    for key in [
+        "PRIZE_MOVIE_DATA",
+        "PRIZE_NITRO_DATA",
+        "PRIZE_STEAM_DATA",
+        "PRIZE_AMAZON_DATA",
+        "PRIZE_GIFT_CARD_DATA",
+    ]:
+        val = raw.get(key)
+        if isinstance(val, list):
+            parsed.setdefault("prize_schedules", {})[key] = val
+
+    # ---- Activity ----
+    activity = raw.get("ACTIVITY_DATA")
+    if isinstance(activity, dict):
+        parsed["activity"] = activity
+
+    # ---- Config ----
+    cfg = raw.get("CONFIG_DATA")
+    if isinstance(cfg, dict):
+        payload = _guild_payload(cfg, guild_id)
+        if isinstance(payload, dict):
+            parsed["config"] = payload
+
+    result["parsed"] = parsed
+
+    # ---- Human readable summary ----
+    bits = []
+    if "birthdays" in parsed:
+        bits.append(f"birthdays={len(parsed['birthdays'])}")
+    if "birthday_public_message" in parsed:
+        bpm = parsed["birthday_public_message"]
+        if isinstance(bpm, dict):
+            bits.append("birthday_public_message=1")
+    if "movie_pool" in parsed:
+        entries = (parsed.get("movie_pool") or {}).get("entries") or []
+        bits.append(f"movie_pool_entries={len(entries)}")
+    if "stickies" in parsed:
+        bits.append(f"stickies_channels={len(parsed['stickies'])}")
+    if "deadchat_last_message_at" in parsed:
+        bits.append(f"deadchat_channels={len(parsed['deadchat_last_message_at'])}")
+    if "deadchat_state" in parsed:
+        bits.append("deadchat_state=1")
+    if "prize_schedules" in parsed:
+        total = sum(len(v) for v in (parsed["prize_schedules"] or {}).values())
+        bits.append(f"prize_items={total}")
+    if "activity" in parsed:
+        bits.append(f"activity_users={len(parsed['activity'])}")
+    if "config" in parsed:
+        bits.append("config=1")
+
+    summary = "✅ Legacy preview loaded. " + (", ".join(bits) if bits else "No recognized payloads found.")
+    if result["errors"]:
+        summary += f" ⚠️ Parse errors: {len(result['errors'])}"
+    result["summary"] = summary
+
     return result
+
+
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+def parse_legacy_timestamp(value) -> datetime:
+    """
+    Accepts legacy timestamps that may look like:
+      - '2025-12-13T19:58:17.335277+00:00Z'
+      - '2025-12-13T19:58:17+00:00'
+      - '2025-12-13T19:58:17Z'
+      - '2025-12-13T19:58:17.335277'
+    Returns a timezone-aware datetime (defaults to UTC if missing tz).
+    """
+    if isinstance(value, datetime):
+        return value
+
+    s = (value or "").strip()
+    if not s:
+        raise RuntimeError("empty timestamp")
+
+    # Common legacy pattern: '+00:00Z' (double tz marker). Normalize it.
+    if s.endswith("Z") and ("+" in s or "-" in s[10:]):
+        s = s[:-1]
+
+    # If just '...Z', normalize to '+00:00'
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+
+    dt = datetime.fromisoformat(s)
+
+    # If naive, assume UTC
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("UTC"))
+
+    return dt
+
+async def db_execute(sql: str, *args):
+    """Execute a SQL statement using the global asyncpg pool."""
+    if db_pool is None:
+        raise RuntimeError("DB pool is not initialized")
+    async with db_pool.acquire() as conn:
+        return await conn.execute(sql, *args)
+
 
 async def run_legacy_import(interaction: discord.Interaction) -> dict:
     """
-    Import legacy *_DATA messages from the legacy storage channel into Postgres.
+    Import legacy storage messages from the legacy storage channel into Postgres.
     Uses UPSERTs only. No deletes.
     """
-    result = {
-        "imported": {},
-        "errors": []
-    }
+    result = {"imported": {}, "errors": []}
 
     data = await run_legacy_preview(interaction)
-    raw = data.get("raw", {})
+    parsed = data.get("parsed", {}) or {}
 
     guild_id = interaction.guild.id
 
+    # Ensure any late-added columns exist
+    try:
+        await db_execute(MOVIE_POOL_STATE_ALTERS_SQL)
+    except Exception:
+        # Not fatal; older DBs may already be migrated or this SQL may not exist in some versions.
+        pass
+
     # ---- Birthdays ----
-    birthdays = raw.get("birthdays")
-    if birthdays:
+    birthdays = parsed.get("birthdays")
+    if isinstance(birthdays, dict) and birthdays:
+        imported = 0
         for user_id, mmdd in birthdays.items():
             try:
+                parts = str(mmdd).strip().split("-")
+                if len(parts) != 2:
+                    raise RuntimeError(f"Invalid MM-DD: {mmdd!r}")
+                month = int(parts[0])
+                day = int(parts[1])
+
                 await db_execute(
                     """
-                    INSERT INTO birthdays (guild_id, user_id, mmdd)
-                    VALUES ($1, $2, $3)
+                    INSERT INTO birthdays (guild_id, user_id, month, day, year, set_by_user_id, updated_at)
+                    VALUES ($1, $2, $3, $4, NULL, NULL, NOW())
                     ON CONFLICT (guild_id, user_id)
-                    DO UPDATE SET mmdd = EXCLUDED.mmdd
+                    DO UPDATE SET month = EXCLUDED.month, day = EXCLUDED.day, updated_at = NOW()
                     """,
-                    guild_id, int(user_id), mmdd
+                    guild_id,
+                    int(user_id),
+                    month,
+                    day,
                 )
+                imported += 1
             except Exception as e:
-                result["errors"].append(f"birthday {user_id}: {e}")
-        result["imported"]["birthdays"] = len(birthdays)
+                result["errors"].append(f"birthdays {user_id}: {e}")
+        result["imported"]["birthdays"] = imported
 
-    # ---- Birthday public message ----
-    bpm = raw.get("birthday_public_message")
-    if bpm:
-        await db_execute(
-            """
-            UPDATE guild_settings
-            SET birthday_channel_id = $2,
-                birthday_message_id = $3
-            WHERE guild_id = $1
-            """,
-            guild_id,
-            bpm["channel_id"],
-            bpm["message_id"],
-        )
-        result["imported"]["birthday_public_message"] = 1
-
-    # ---- Movie Pool ----
-    pool = raw.get("movie_pool")
-    if pool:
-        entries = pool.get("entries", [])
-        for user_id, title in entries:
-            try:
-                await db_execute(
-                    """
-                    INSERT INTO movie_pool_picks (guild_id, user_id, title)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT DO NOTHING
-                    """,
-                    guild_id, int(user_id), title
-                )
-            except Exception as e:
-                result["errors"].append(f"pool {title}: {e}")
-        result["imported"]["movie_pool_entries"] = len(entries)
-
-        msg = pool.get("message")
-        if msg:
+    bpm = parsed.get("birthday_public_message")
+    if isinstance(bpm, dict) and bpm:
+        try:
             await db_execute(
                 """
-                INSERT INTO movie_pool_state (guild_id, channel_id, message_id)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (guild_id)
-                DO UPDATE SET channel_id = EXCLUDED.channel_id,
-                              message_id = EXCLUDED.message_id
-                """,
-                guild_id, msg["channel_id"], msg["message_id"]
-            )
-            result["imported"]["movie_pool_message"] = 1
-
-    # ---- Stickies ----
-    stickies = raw.get("stickies")
-    if stickies:
-        for channel_id, info in stickies.items():
-            await db_execute(
-                """
-                INSERT INTO sticky_messages (guild_id, channel_id, text, message_id)
-                VALUES ($1, $2, $3, $4)
-                ON CONFLICT (guild_id, channel_id)
-                DO UPDATE SET text = EXCLUDED.text,
-                              message_id = EXCLUDED.message_id
+                UPDATE guild_settings
+                SET updated_at = NOW()
+                WHERE guild_id = $1
                 """,
                 guild_id,
-                int(channel_id),
-                info["text"],
-                info["message_id"]
             )
-        result["imported"]["stickies"] = len(stickies)
-
-    # ---- Activity ----
-    activity = raw.get("activity")
-    if activity:
-        for user_id, iso_ts in activity.items():
+            # Store the public message pointers in the existing movie_pool_state table if you don't have a dedicated table.
+            # But you DO have movie_pool_state, so we keep birthdays public message separately in your DB with a simple table:
             await db_execute(
                 """
-                INSERT INTO member_activity (guild_id, user_id, last_seen)
-                VALUES ($1, $2, $3)
-                ON CONFLICT (guild_id, user_id)
-                DO UPDATE SET last_seen = EXCLUDED.last_seen
-                """,
-                guild_id, int(user_id), iso_ts
+                CREATE TABLE IF NOT EXISTS birthday_public_message (
+                    guild_id BIGINT PRIMARY KEY,
+                    channel_id BIGINT NOT NULL,
+                    message_id BIGINT NOT NULL,
+                    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                )
+                """
             )
-        result["imported"]["activity"] = len(activity)
+            await db_execute(
+                """
+                INSERT INTO birthday_public_message (guild_id, channel_id, message_id, updated_at)
+                VALUES ($1, $2, $3, NOW())
+                ON CONFLICT (guild_id)
+                DO UPDATE SET channel_id = EXCLUDED.channel_id, message_id = EXCLUDED.message_id, updated_at = NOW()
+                """,
+                guild_id,
+                int(bpm.get("channel_id") or 0),
+                int(bpm.get("message_id") or 0),
+            )
+            result["imported"]["birthday_public_message"] = 1
+        except Exception as e:
+            result["errors"].append(f"birthday_public_message: {e}")
+
+    # ---- Movie Pool ----
+    pool = parsed.get("movie_pool")
+    if isinstance(pool, dict) and pool:
+        try:
+            channel_id = pool.get("channel_id")
+            message_id = pool.get("message_id")
+            entries = pool.get("entries", []) or []
+
+            # Save state pointers
+            await db_execute(
+                """
+                INSERT INTO movie_pool_state (guild_id, channel_id, message_id, updated_at)
+                VALUES ($1, $2, $3, NOW())
+                ON CONFLICT (guild_id)
+                DO UPDATE SET channel_id = EXCLUDED.channel_id, message_id = EXCLUDED.message_id, updated_at = NOW()
+                """,
+                guild_id,
+                int(channel_id) if channel_id else None,
+                int(message_id) if message_id else None,
+            )
+
+            imported = 0
+            for row in entries:
+                try:
+                    user_id, title = row
+                    await db_execute(
+                        """
+                        INSERT INTO movie_pool_picks (guild_id, user_id, title, picked_at)
+                        VALUES ($1, $2, $3, NOW())
+                        ON CONFLICT (guild_id, user_id)
+                        DO UPDATE SET title = EXCLUDED.title, picked_at = NOW()
+                        """,
+                        guild_id,
+                        int(user_id),
+                        str(title)[:512],
+                    )
+                    imported += 1
+                except Exception as e:
+                    result["errors"].append(f"movie_pool entry {row!r}: {e}")
+            result["imported"]["movie_pool_picks"] = imported
+            result["imported"]["movie_pool_state"] = 1
+        except Exception as e:
+            result["errors"].append(f"movie_pool: {e}")
+
+    # ---- Sticky Messages ----
+    stickies = parsed.get("stickies")
+    if isinstance(stickies, dict) and stickies:
+        imported = 0
+        for channel_id, info in stickies.items():
+            try:
+                if not isinstance(info, dict):
+                    continue
+                text = info.get("text") or ""
+                msg_id = info.get("message_id") or info.get("message") or None
+                await db_execute(
+                    """
+                    INSERT INTO sticky_messages (guild_id, channel_id, text, message_id, updated_at)
+                    VALUES ($1, $2, $3, $4, NOW())
+                    ON CONFLICT (guild_id, channel_id)
+                    DO UPDATE SET text = EXCLUDED.text, message_id = EXCLUDED.message_id, updated_at = NOW()
+                    """,
+                    guild_id,
+                    int(channel_id),
+                    str(text),
+                    int(msg_id) if msg_id else None,
+                )
+                imported += 1
+            except Exception as e:
+                result["errors"].append(f"sticky {channel_id}: {e}")
+        result["imported"]["sticky_messages"] = imported
+
+    # ---- Dead Chat Channels + State ----
+    # Legacy DEADCHAT_DATA: { "<channel_id>": "<timestamp>", ... }
+    deadchat_last = parsed.get("deadchat_last_message_at")
+    if isinstance(deadchat_last, dict) and deadchat_last:
+        imported_channels = 0
+        imported_state = 0
+        for channel_id, ts in deadchat_last.items():
+            try:
+                ch_id = int(channel_id)
+                dt = parse_legacy_timestamp(ts)
+
+                # Ensure channel exists in deadchat_channels
+                await db_execute(
+                    """
+                    INSERT INTO deadchat_channels (guild_id, channel_id, enabled, idle_minutes)
+                    VALUES ($1, $2, TRUE, NULL)
+                    ON CONFLICT (guild_id, channel_id)
+                    DO UPDATE SET enabled = TRUE
+                    """,
+                    guild_id, ch_id
+                )
+                imported_channels += 1
+
+                # Save last_message_at in deadchat_state (no award info here)
+                await db_execute(
+                    """
+                    INSERT INTO deadchat_state (guild_id, channel_id, last_message_at)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (guild_id, channel_id)
+                    DO UPDATE SET last_message_at = EXCLUDED.last_message_at
+                    """,
+                    guild_id, ch_id, dt
+                )
+                imported_state += 1
+            except Exception as e:
+                result["errors"].append(f"deadchat_data {channel_id}: {e}")
+        result["imported"]["deadchat_channels"] = imported_channels
+        result["imported"]["deadchat_state_last_message_at"] = imported_state
+
+    # Legacy DEADCHAT_STATE: per-guild object with current holder + message ids + win times
+    dc_state = parsed.get("deadchat_state")
+    if isinstance(dc_state, dict) and dc_state:
+        try:
+            channel_id = dc_state.get("channel_id") or dc_state.get("deadchat_channel_id")
+            if channel_id:
+                ch_id = int(channel_id)
+                current_holder = dc_state.get("current_holder") or dc_state.get("current_holder_user_id")
+                notice_msg_id = dc_state.get("notice_msg_id") or dc_state.get("notice_message_id") or dc_state.get("notice_msg_id_2")
+                win_times = dc_state.get("win_times") or {}
+
+                # Pick a reasonable "last_award_at": max timestamp in win_times
+                last_award_at = None
+                if isinstance(win_times, dict) and win_times:
+                    try:
+                        last_award_at = max(parse_legacy_timestamp(v) for v in win_times.values() if v)
+                    except Exception:
+                        last_award_at = None
+
+                await db_execute(
+                    """
+                    INSERT INTO deadchat_state (guild_id, channel_id, last_message_at, current_holder_user_id, last_award_at, last_award_message_id)
+                    VALUES ($1, $2, COALESCE((SELECT last_message_at FROM deadchat_state WHERE guild_id=$1 AND channel_id=$2), NOW()),
+                            $3, $4, $5)
+                    ON CONFLICT (guild_id, channel_id)
+                    DO UPDATE SET
+                        current_holder_user_id = EXCLUDED.current_holder_user_id,
+                        last_award_at = COALESCE(EXCLUDED.last_award_at, deadchat_state.last_award_at),
+                        last_award_message_id = COALESCE(EXCLUDED.last_award_message_id, deadchat_state.last_award_message_id)
+                    """,
+                    guild_id,
+                    ch_id,
+                    int(current_holder) if current_holder else None,
+                    last_award_at,
+                    int(notice_msg_id) if notice_msg_id else None,
+                )
+                result["imported"]["deadchat_state_award_info"] = 1
+        except Exception as e:
+            result["errors"].append(f"deadchat_state: {e}")
+
+    # ---- Prizes (legacy schedule lists) ----
+    prize_schedules = parsed.get("prize_schedules")
+    if isinstance(prize_schedules, dict) and prize_schedules:
+        imported_defs = 0
+        imported_sched = 0
+
+        def _title_from_key(k: str) -> str:
+            return {
+                "PRIZE_MOVIE_DATA": "Movie Prize",
+                "PRIZE_NITRO_DATA": "Nitro Prize",
+                "PRIZE_STEAM_DATA": "Steam Prize",
+                "PRIZE_AMAZON_DATA": "Amazon Prize",
+                "PRIZE_GIFT_CARD_DATA": "Gift Card Prize",
+            }.get(k, "Prize")
+
+        for key, items in prize_schedules.items():
+            if not isinstance(items, list):
+                continue
+            for item in items:
+                try:
+                    if not isinstance(item, dict):
+                        continue
+                    prize_id = item.get("id")
+                    channel_id = item.get("channel_id")
+                    content = item.get("content") or item.get("text") or item.get("description") or ""
+                    day_str = item.get("date") or item.get("day")
+                    if not (prize_id and channel_id and day_str):
+                        raise RuntimeError(f"Missing fields (id/channel_id/date): {item!r}")
+
+                    prize_uuid = str(prize_id)
+                    day = parse_date_yyyy_mm_dd(str(day_str))
+
+                    # Definition
+                    await db_execute(
+                        """
+                        INSERT INTO prize_definitions (guild_id, prize_id, title, description, image_url, enabled)
+                        VALUES ($1, $2::uuid, $3, $4, NULL, TRUE)
+                        ON CONFLICT (guild_id, prize_id)
+                        DO UPDATE SET title = EXCLUDED.title, description = EXCLUDED.description, enabled = TRUE
+                        """,
+                        guild_id, prize_uuid, _title_from_key(key), str(content)
+                    )
+                    imported_defs += 1
+
+                    # Schedule (we reuse the legacy id as schedule_id so it's stable)
+                    await db_execute(
+                        """
+                        INSERT INTO prize_schedules (guild_id, schedule_id, day, not_before_time, channel_id, prize_id, used, used_at)
+                        VALUES ($1, $2::uuid, $3, NULL, $4, $5::uuid, FALSE, NULL)
+                        ON CONFLICT (guild_id, schedule_id)
+                        DO UPDATE SET day = EXCLUDED.day, channel_id = EXCLUDED.channel_id, prize_id = EXCLUDED.prize_id, used = FALSE, used_at = NULL
+                        """,
+                        guild_id, prize_uuid, day, int(channel_id), prize_uuid
+                    )
+                    imported_sched += 1
+                except Exception as e:
+                    result["errors"].append(f"prize {key}: {e}")
+        if imported_defs:
+            result["imported"]["prize_definitions"] = imported_defs
+        if imported_sched:
+            result["imported"]["prize_schedules"] = imported_sched
+
+    # ---- Activity ----
+    activity = parsed.get("activity")
+    if isinstance(activity, dict) and activity:
+        imported = 0
+        for user_id, ts in activity.items():
+            try:
+                dt = parse_legacy_timestamp(ts)
+                await db_execute(
+                    """
+                    INSERT INTO member_activity (guild_id, user_id, last_message_at)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (guild_id, user_id)
+                    DO UPDATE SET last_message_at = EXCLUDED.last_message_at
+                    """,
+                    guild_id, int(user_id), dt
+                )
+                imported += 1
+            except Exception as e:
+                result["errors"].append(f"activity {user_id}: {e}")
+        result["imported"]["activity"] = imported
+
+    # ---- Config → guild_settings (best-effort mapping) ----
+    cfg = parsed.get("config")
+    if isinstance(cfg, dict) and cfg:
+        try:
+            # A lot of legacy config keys don't exist in your current schema; we map what we can.
+            # Known keys seen in old dumps: active_role_id, deadchat_role_id, active_threshold_minutes, etc.
+            updates = {
+                "active_role_id": cfg.get("active_role_id"),
+                "deadchat_role_id": cfg.get("deadchat_role_id"),
+            }
+
+            # If legacy had "dead_chat_channel_ids" list, ensure those channels exist in deadchat_channels.
+            dc_channels = cfg.get("dead_chat_channel_ids") or cfg.get("deadchat_channel_ids") or []
+            if isinstance(dc_channels, list):
+                for ch in dc_channels:
+                    try:
+                        await db_execute(
+                            """
+                            INSERT INTO deadchat_channels (guild_id, channel_id, enabled, idle_minutes)
+                            VALUES ($1, $2, TRUE, NULL)
+                            ON CONFLICT (guild_id, channel_id)
+                            DO UPDATE SET enabled = TRUE
+                            """,
+                            guild_id, int(ch)
+                        )
+                    except Exception:
+                        pass
+
+            # Upsert guild_settings row (create if missing)
+            await db_execute(
+                """
+                INSERT INTO guild_settings (guild_id, updated_at)
+                VALUES ($1, NOW())
+                ON CONFLICT (guild_id)
+                DO UPDATE SET updated_at = NOW()
+                """,
+                guild_id
+            )
+
+            # Apply mapped fields that exist
+            set_bits = []
+            params = [guild_id]
+            i = 2
+            for k, v in updates.items():
+                if v is None:
+                    continue
+                set_bits.append(f"{k} = ${i}")
+                params.append(int(v))
+                i += 1
+
+            if set_bits:
+                await db_execute(
+                    f"UPDATE guild_settings SET {', '.join(set_bits)}, updated_at = NOW() WHERE guild_id = $1",
+                    *params
+                )
+
+            result["imported"]["guild_settings"] = 1
+        except Exception as e:
+            result["errors"].append(f"config: {e}")
 
     return result
+
 
 def parse_date_yyyy_mm_dd(s: str) -> date:
     parts = (s or "").strip().split("-")
@@ -753,11 +1219,14 @@ async def init_db():
     global db_pool
     if not DATABASE_URL:
         raise RuntimeError("DATABASE_URL is missing")
+
     db_pool = await asyncpg.create_pool(DATABASE_URL, min_size=1, max_size=10)
+
     async with db_pool.acquire() as conn:
         await conn.execute("SET TIME ZONE 'UTC';")
+
+        # --- Create tables first ---
         await conn.execute(GUILD_SETTINGS_SQL)
-        await conn.execute(SCHEMA_ALTERS_SQL)
         await conn.execute(MEMBER_ACTIVITY_SQL)
         await conn.execute(ACTIVITY_CHANNELS_SQL)
         await conn.execute(DEADCHAT_CHANNELS_SQL)
@@ -776,6 +1245,12 @@ async def init_db():
         await conn.execute(AUTODELETE_IGNORE_PHRASES_SQL)
         await conn.execute(VOICE_ROLE_LINKS_SQL)
         await conn.execute(QOTD_HISTORY_SQL)
+        await conn.execute(MOVIE_POOL_PICKS_SQL)
+        await conn.execute(MOVIE_POOL_STATE_SQL)
+        await conn.execute(MOVIE_POOL_STATE_ALTERS_SQL)
+
+        # --- Then alter/extend schema last ---
+        await conn.execute(SCHEMA_ALTERS_SQL)
 
 async def close_db():
     global db_pool
@@ -793,7 +1268,10 @@ def get_deadchat_lock(guild_id: int, channel_id: int) -> asyncio.Lock:
 
 async def ensure_guild_row(guild_id: int) -> None:
     async with db_pool.acquire() as conn:
-        await conn.execute("INSERT INTO guild_settings (guild_id) VALUES ($1) ON CONFLICT (guild_id) DO NOTHING;", guild_id)
+        await conn.execute(
+            "INSERT INTO guild_settings (guild_id) VALUES ($1) ON CONFLICT (guild_id) DO NOTHING;",
+            guild_id
+        )
 
 async def get_guild_settings(guild_id: int) -> dict:
     await ensure_guild_row(guild_id)
@@ -810,16 +1288,22 @@ async def get_guild_settings(guild_id: int) -> dict:
             """,
             guild_id,
         )
+
     return {
         "active_role_id": row["active_role_id"],
         "active_threshold_minutes": int(row["active_threshold_minutes"]),
         "active_mode": row["active_mode"] or "all",
+
         "deadchat_role_id": row["deadchat_role_id"],
         "deadchat_idle_minutes": int(row["deadchat_idle_minutes"]),
         "deadchat_requires_active": bool(row["deadchat_requires_active"]),
         "deadchat_cooldown_minutes": int(row["deadchat_cooldown_minutes"]),
+
         "plague_role_id": row["plague_role_id"],
         "plague_duration_hours": int(row["plague_duration_hours"]),
+        "plague_enabled": bool(row["plague_enabled"]),
+        "plague_scheduled_day": row["plague_scheduled_day"],
+
         "prizes_enabled": bool(row["prizes_enabled"]),
         "timezone": row["timezone"] or "America/Los_Angeles",
     }
@@ -885,15 +1369,24 @@ async def set_active_mode(guild_id: int, mode: str) -> None:
 
 async def add_activity_channel(guild_id: int, channel_id: int) -> None:
     async with db_pool.acquire() as conn:
-        await conn.execute("INSERT INTO activity_channels (guild_id, channel_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;", guild_id, channel_id)
+        await conn.execute(
+            "INSERT INTO activity_channels (guild_id, channel_id) VALUES ($1, $2) ON CONFLICT DO NOTHING;",
+            guild_id, channel_id
+        )
 
 async def remove_activity_channel(guild_id: int, channel_id: int) -> None:
     async with db_pool.acquire() as conn:
-        await conn.execute("DELETE FROM activity_channels WHERE guild_id = $1 AND channel_id = $2;", guild_id, channel_id)
+        await conn.execute(
+            "DELETE FROM activity_channels WHERE guild_id = $1 AND channel_id = $2;",
+            guild_id, channel_id
+        )
 
 async def list_activity_channels(guild_id: int) -> list[int]:
     async with db_pool.acquire() as conn:
-        rows = await conn.fetch("SELECT channel_id FROM activity_channels WHERE guild_id = $1 ORDER BY channel_id ASC;", guild_id)
+        rows = await conn.fetch(
+            "SELECT channel_id FROM activity_channels WHERE guild_id = $1 ORDER BY channel_id ASC;",
+            guild_id
+        )
     return [int(r["channel_id"]) for r in rows]
 
 async def record_activity(guild_id: int, user_id: int) -> None:
@@ -914,7 +1407,10 @@ async def should_count_activity_message(guild_id: int, channel_id: int) -> bool:
     if settings["active_mode"] == "all":
         return True
     async with db_pool.acquire() as conn:
-        exists = await conn.fetchval("SELECT 1 FROM activity_channels WHERE guild_id = $1 AND channel_id = $2;", guild_id, channel_id)
+        exists = await conn.fetchval(
+            "SELECT 1 FROM activity_channels WHERE guild_id = $1 AND channel_id = $2;",
+            guild_id, channel_id
+        )
     return bool(exists)
 
 async def maybe_apply_active_role(member: discord.Member) -> None:
@@ -1057,7 +1553,10 @@ async def add_deadchat_channel(guild_id: int, channel_id: int, idle_minutes_over
 
 async def remove_deadchat_channel(guild_id: int, channel_id: int) -> None:
     async with db_pool.acquire() as conn:
-        await conn.execute("DELETE FROM deadchat_channels WHERE guild_id = $1 AND channel_id = $2;", guild_id, channel_id)
+        await conn.execute(
+            "DELETE FROM deadchat_channels WHERE guild_id = $1 AND channel_id = $2;",
+            guild_id, channel_id
+        )
 
 async def list_deadchat_channels(guild_id: int) -> list[dict]:
     async with db_pool.acquire() as conn:
@@ -1112,7 +1611,12 @@ async def deadchat_get_state(guild_id: int, channel_id: int) -> dict:
             channel_id,
         )
     if not row:
-        return {"last_message_at": now_utc(), "current_holder_user_id": None, "last_award_at": None, "last_award_message_id": None}
+        return {
+            "last_message_at": now_utc(),
+            "current_holder_user_id": None,
+            "last_award_at": None,
+            "last_award_message_id": None
+        }
     return {
         "last_message_at": row["last_message_at"],
         "current_holder_user_id": row["current_holder_user_id"],
@@ -1195,7 +1699,6 @@ async def plague_set_duration(guild_id: int, hours: int) -> None:
             hours,
         )
 
-
 async def plague_set_enabled(guild_id: int, enabled: bool) -> None:
     await ensure_guild_row(guild_id)
     async with db_pool.acquire() as conn:
@@ -1242,17 +1745,26 @@ async def plague_remove_day(guild_id: int, day: date) -> None:
 
 async def plague_list_days(guild_id: int) -> list[date]:
     async with db_pool.acquire() as conn:
-        rows = await conn.fetch("SELECT day FROM plague_days WHERE guild_id = $1 AND enabled = TRUE ORDER BY day ASC;", guild_id)
+        rows = await conn.fetch(
+            "SELECT day FROM plague_days WHERE guild_id = $1 AND enabled = TRUE ORDER BY day ASC;",
+            guild_id
+        )
     return [r["day"] for r in rows]
 
 async def plague_is_day(guild_id: int, day: date) -> bool:
     async with db_pool.acquire() as conn:
-        value = await conn.fetchval("SELECT 1 FROM plague_days WHERE guild_id = $1 AND day = $2 AND enabled = TRUE;", guild_id, day)
+        value = await conn.fetchval(
+            "SELECT 1 FROM plague_days WHERE guild_id = $1 AND day = $2 AND enabled = TRUE;",
+            guild_id, day
+        )
     return bool(value)
 
 async def plague_daily_already_triggered(guild_id: int, day: date) -> bool:
     async with db_pool.acquire() as conn:
-        row = await conn.fetchrow("SELECT infected_user_id FROM plague_daily_state WHERE guild_id = $1 AND day = $2;", guild_id, day)
+        row = await conn.fetchrow(
+            "SELECT infected_user_id FROM plague_daily_state WHERE guild_id = $1 AND day = $2;",
+            guild_id, day
+        )
     return bool(row and row["infected_user_id"])
 
 async def plague_mark_triggered(guild_id: int, day: date, user_id: int) -> None:
@@ -1390,7 +1902,13 @@ async def prize_get_definition(guild_id: int, prize_id: uuid.UUID) -> dict | Non
         )
     if not row:
         return None
-    return {"prize_id": row["prize_id"], "title": row["title"], "description": row["description"], "image_url": row["image_url"], "enabled": bool(row["enabled"])}
+    return {
+        "prize_id": row["prize_id"],
+        "title": row["title"],
+        "description": row["description"],
+        "image_url": row["image_url"],
+        "enabled": bool(row["enabled"])
+    }
 
 async def prize_schedule_add(guild_id: int, day: date, not_before: time | None, channel_id: int, prize_id: uuid.UUID) -> uuid.UUID:
     sid = uuid.uuid4()
@@ -1457,7 +1975,12 @@ async def prize_find_available_schedule_for_today(guild_id: int, day: date, loca
     nbt = row["not_before_time"]
     if nbt is not None and local_time < nbt:
         return None
-    return {"schedule_id": row["schedule_id"], "not_before_time": nbt, "channel_id": int(row["channel_id"]), "prize_id": row["prize_id"]}
+    return {
+        "schedule_id": row["schedule_id"],
+        "not_before_time": nbt,
+        "channel_id": int(row["channel_id"]),
+        "prize_id": row["prize_id"],
+    }
 
 async def prize_mark_used(guild_id: int, schedule_id: uuid.UUID) -> None:
     async with db_pool.acquire() as conn:
@@ -1533,49 +2056,61 @@ async def deadchat_attempt_award(bot: commands.Bot, message: discord.Message) ->
         return
     if not isinstance(message.author, discord.Member):
         return
+
     guild_id = int(message.guild.id)
     channel_id = int(message.channel.id)
+
     cfg = await get_deadchat_channel_config(guild_id, channel_id)
     if not cfg or not cfg["enabled"]:
         await deadchat_update_last_message(guild_id, channel_id)
         return
+
     settings = await get_guild_settings(guild_id)
     role_id = settings["deadchat_role_id"]
     if not role_id:
         await deadchat_update_last_message(guild_id, channel_id)
         return
+
     state = await deadchat_get_state(guild_id, channel_id)
     idle_minutes = int(cfg["idle_minutes"]) if cfg["idle_minutes"] is not None else int(settings["deadchat_idle_minutes"])
     last_msg_at = state["last_message_at"]
     now = now_utc()
+
     is_dead = (now - last_msg_at) >= timedelta(minutes=idle_minutes)
     await deadchat_update_last_message(guild_id, channel_id)
     if not is_dead:
         return
+
     if settings["deadchat_requires_active"]:
         active_role_id = settings["active_role_id"]
         if active_role_id:
             active_role = message.guild.get_role(int(active_role_id))
             if active_role and active_role not in message.author.roles:
                 return
+
     cooldown_until = await deadchat_get_user_cooldown_until(guild_id, channel_id, int(message.author.id))
     if cooldown_until and cooldown_until > now:
         return
+
     lock = get_deadchat_lock(guild_id, channel_id)
     async with lock:
         state = await deadchat_get_state(guild_id, channel_id)
         last_msg_at = state["last_message_at"]
         now = now_utc()
+
         is_dead = (now - last_msg_at) >= timedelta(minutes=idle_minutes)
         await deadchat_update_last_message(guild_id, channel_id)
         if not is_dead:
             return
+
         cooldown_until = await deadchat_get_user_cooldown_until(guild_id, channel_id, int(message.author.id))
         if cooldown_until and cooldown_until > now:
             return
+
         deadchat_role = message.guild.get_role(int(role_id))
         if deadchat_role is None:
             return
+
         prev_holder_id = state["current_holder_user_id"]
         if prev_holder_id:
             prev_member = message.guild.get_member(int(prev_holder_id))
@@ -1584,11 +2119,13 @@ async def deadchat_attempt_award(bot: commands.Bot, message: discord.Message) ->
                     await prev_member.remove_roles(deadchat_role, reason="Dead Chat: transferred to new holder")
                 except Exception:
                     pass
+
         if deadchat_role not in message.author.roles:
             try:
                 await message.author.add_roles(deadchat_role, reason="Dead Chat: awarded to channel reviver")
             except Exception:
                 return
+
         old_msg_id = state["last_award_message_id"]
         if old_msg_id:
             try:
@@ -1596,20 +2133,29 @@ async def deadchat_attempt_award(bot: commands.Bot, message: discord.Message) ->
                 await old_msg.delete()
             except Exception:
                 pass
-        text = MSG["deadchat_awarded"]
-        text = format_template(text, message.author)
-        sent = await message.channel.send(text)
+
+        announce_text = MSG["deadchat_awarded"]
+        announce_text = format_template(announce_text, message.author)
+
+        sent = None
         try:
             sent = await message.channel.send(announce_text)
         except Exception:
             sent = None
+
         await deadchat_set_holder(guild_id, channel_id, int(message.author.id), int(sent.id) if sent else None)
+
         cd_minutes = int(settings["deadchat_cooldown_minutes"])
         if cd_minutes > 0:
-            await deadchat_set_user_cooldown(guild_id, channel_id, int(message.author.id), now + timedelta(minutes=cd_minutes))
+            await deadchat_set_user_cooldown(
+                guild_id,
+                channel_id,
+                int(message.author.id),
+                now + timedelta(minutes=cd_minutes)
+            )
+
         await maybe_trigger_plague(message.guild, int(message.author.id), channel_id)
         await maybe_trigger_prize_drop(message.guild, int(message.author.id))
-
 
 async def maybe_trigger_plague(guild: discord.Guild, winner_user_id: int, source_channel_id: int) -> None:
     settings = await get_guild_settings(int(guild.id))
@@ -1703,16 +2249,15 @@ async def plague_cleanup_once(bot: commands.Bot):
             continue
         settings = await get_guild_settings(int(guild.id))
         role_id = settings["plague_role_id"]
-        if role_id:
-            role = guild.get_role(int(role_id))
-        else:
-            role = None
+        role = guild.get_role(int(role_id)) if role_id else None
+
         member = guild.get_member(int(e["user_id"]))
         if member and role and role in member.roles:
             try:
                 await member.remove_roles(role, reason="Plague: infection expired")
             except Exception:
                 pass
+
         await plague_delete_infection(int(guild.id), int(e["user_id"]))
 
 ############### VIEWS / UI COMPONENTS ###############
@@ -2534,11 +3079,11 @@ async def config_system_cmd(
     legacy_import: bool | None = None,
 ):
     guild_id = require_guild(interaction)
-    used = _count_set(info=info, timezone_set=timezone_set, timezone_show=timezone_show, ping=ping, health_check=health_check, legacy_preview=legacy_preview)
+    used = _count_set(info=info, timezone_set=timezone_set, timezone_show=timezone_show, ping=ping, health_check=health_check, legacy_preview=legacy_preview, legacy_import=legacy_import,)
     ok = await _require_one_action(
         interaction,
         used,
-        "Examples: `/config system ping:true` • `/config system health_check:true` • `/config system legacy_preview:true` • `/config system timezone_set:America/Los_Angeles` • `/config system timezone_show:true` • `/config system info:true`",
+        "Examples: `/config system ping:true` • `/config system health_check:true` • `/config system legacy_preview:true` • `/config system legacy_import:true` • `/config system timezone_set:America/Los_Angeles` • `/config system timezone_show:true` • `/config system info:true`",
     )
     if not ok:
         return
@@ -2572,10 +3117,29 @@ async def config_system_cmd(
         if not await require_dev_guild(interaction):
             return
         data = await run_legacy_import(interaction)
-        await interaction.response.send_message(
-            f"✅ Legacy import complete:\n{data}",
-            ephemeral=True
+
+        imported = data.get("imported", {}) or {}
+        errors = data.get("errors", []) or []
+        
+        imported_bits = ", ".join(f"{k}={v}" for k, v in imported.items()) if imported else "none"
+        summary = (
+            "✅ Legacy import complete.\n"
+            f"Imported: {imported_bits}\n"
+            f"Errors: {len(errors)}"
         )
+        
+        await interaction.response.send_message(summary, ephemeral=True)
+        
+        # Attach full output if it's long (or if there are errors)
+        import io, json
+        full_text = json.dumps(data, indent=2, default=str)
+        if len(full_text) > 1800 or errors:
+            buf = io.BytesIO(full_text.encode("utf-8"))
+            await interaction.followup.send(
+                content="Full legacy import output attached.",
+                file=discord.File(fp=buf, filename="legacy_import_output.json"),
+                ephemeral=True,
+            )
         return
 
         lines = []
